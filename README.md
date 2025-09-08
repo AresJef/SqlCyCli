@@ -13,7 +13,7 @@ pip install sqlcycli
 Install from `github`
 
 ```bash
-pip install git+https://github.com/AresJef/SQLCyCli.git
+pip install git+https://github.com/AresJef/SqlCyCli.git
 ```
 
 ## Requirements
