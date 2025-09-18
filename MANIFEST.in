@@ -1,7 +1,4 @@
 include LICENSE
 include README.md
 
-include src/sqlcycli/*.pxd
-include src/sqlcycli/*.py
-include src/sqlcycli/*.pyi
-include src/sqlcycli/*.pyx
+recursive-include src/sqlcycli *.py *.pxd *.pyx *.pyi
