@@ -127,13 +127,13 @@ cpdef str validate_arg_str(object arg, str arg_name, str default):
         )
     return arg if str_len(arg) > 0 else default
 
-cpdef object validate_arg_uint(object arg, str arg_name, unsigned int min_value, unsigned int max_value):
-    """Validate that an argument is an integer within a given unsigned range or None `<'int/None'>`.
+cpdef object validate_arg_int(object arg, str arg_name, long long min_value, long long max_value):
+    """Validate that an argument is an integer within a given range or None `<'int/None'>`.
 
-    :param arg `<'int/None'>`: The argument value to validate (may be None or an int).
+    :param arg `<'int/None'>`: The argument value to validate.
     :param arg_name `<'str'>`: The name of the argument (used in error messages).
-    :param min_value `<'int'>`: The minimum allowed unsigned value (inclusive).
-    :param max_value `<'int'>`: The maximum allowed unsigned value (inclusive).
+    :param min_value `<'int'>`: The minimum allowed value (inclusive).
+    :param max_value `<'int'>`: The maximum allowed value (inclusive).
     :returns `<'int/None'>`: The valid integer within the range, or None.
     :raises `<'InvalidConnectionArgsError'>`: If `arg` is neither None nor an int,
         or if it falls outside the `[min_value, max_value]` range.
@@ -617,22 +617,22 @@ cpdef bint _test_gen_length_encoded_integer() except -1:
 
 cpdef bint _test_validate_max_allowed_packet() except -1:
     cdef int default = 16_777_216
-    cdef int max_val = 1_073_741_824
+    cdef int max_value = 1_073_741_824
     cdef int v
     cdef int i
 
     # Test None
-    v = validate_max_allowed_packet(None, default, max_val)
+    v = validate_max_allowed_packet(None, default, max_value)
     assert v == default, f"validate_max_allowed_packet: {v} not equal {default}"
 
     # Test integer
     for i in range(1, 256):
-        v = validate_max_allowed_packet(i, default, max_val)
+        v = validate_max_allowed_packet(i, default, max_value)
         assert v == i, f"validate_max_allowed_packet: {v} not equal {i}"
 
-    for i in (0, max_val + 1):
+    for i in (0, max_value + 1):
         try:
-            validate_max_allowed_packet(i, default, max_val)
+            validate_max_allowed_packet(i, default, max_value)
         except errors.InvalidConnectionArgsError as err:
             pass
         else:
@@ -640,28 +640,28 @@ cpdef bint _test_validate_max_allowed_packet() except -1:
 
     # Test string
     for val in ("1", "1b", "1B"):  # 1 byte
-        v = validate_max_allowed_packet(val, default, max_val)
+        v = validate_max_allowed_packet(val, default, max_value)
         assert v == 1, f"validate_max_allowed_packet: {v} not equal {1}"
     for val in ("1k", "1K", "1kb", "1KB"):
-        v = validate_max_allowed_packet(val, default, max_val)
+        v = validate_max_allowed_packet(val, default, max_value)
         assert v == 1_024, f"validate_max_allowed_packet: {v} not equal {1_024}"
     for val in ("1m", "1M", "1mb", "1MB"):
-        v = validate_max_allowed_packet(val, default, max_val)
+        v = validate_max_allowed_packet(val, default, max_value)
         assert v == 1_048_576, f"validate_max_allowed_packet: {v} not equal {1_048_576}"
     for val in ("1g", "1G", "1gb", "1GB"):
-        v = validate_max_allowed_packet(val, default, max_val)
+        v = validate_max_allowed_packet(val, default, max_value)
         assert v == 1_073_741_824, f"validate_max_allowed_packet: {v} not equal {1_073_741_824}"
 
     for val in (
         *["0" + sfix for sfix in ("b", "B", "k", "K", "kb", "KB", "m", "M", "mb", "MB", "g", "G", "gb", "GB")],
-        *[str(max_val + 1) + sfix for sfix in ("b", "B")],
-        *[str(int(max_val / 1024) + 1) + sfix for sfix in ("k", "K", "kb", "KB")],
-        *[str(int(max_val / 1_048_576) + 1) + sfix for sfix in ("m", "M", "mb", "MB")],
-        *[str(int(max_val / 1_073_741_824) + 1) + sfix for sfix in ("g", "G", "gb", "GB")],
+        *[str(max_value + 1) + sfix for sfix in ("b", "B")],
+        *[str(int(max_value / 1024) + 1) + sfix for sfix in ("k", "K", "kb", "KB")],
+        *[str(int(max_value / 1_048_576) + 1) + sfix for sfix in ("m", "M", "mb", "MB")],
+        *[str(int(max_value / 1_073_741_824) + 1) + sfix for sfix in ("g", "G", "gb", "GB")],
         "3L",
     ):
         try:
-            validate_max_allowed_packet(val, default, max_val)
+            validate_max_allowed_packet(val, default, max_value)
         except errors.InvalidConnectionArgsError as err:
             pass
         else:

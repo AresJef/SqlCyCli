@@ -586,7 +586,7 @@ cdef bytes DEFAULT_CONNECT_ATTRS
 
 # Utils: Argument Validator
 cpdef str validate_arg_str(object arg, str arg_name, str default)
-cpdef object validate_arg_uint(object arg, str arg_name, unsigned int min_value, unsigned int max_value)
+cpdef object validate_arg_int(object arg, str arg_name, long long min_value, long long max_value)
 cpdef bytes validate_arg_bytes(object arg, str arg_name, char* encoding, str default)
 cpdef Charset validate_charset(object charset, object collation, str default_charset)
 cpdef int validate_autocommit(object autocommit) except -2

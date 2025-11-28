@@ -409,18 +409,18 @@ def validate_arg_str(arg: str | None, arg_name: str, default: str | None) -> str
     - Any other type raises `InvalidConnectionArgsError`.
     """
 
-def validate_arg_uint(
+def validate_arg_int(
     arg: int | None,
     arg_name: str,
     min_value: int,
     max_value: int,
 ) -> int | None:
-    """Validate that an argument is an integer within a given unsigned range or None `<'int/None'>`.
+    """Validate that an argument is an integer within a given range or None `<'int/None'>`.
 
-    :param arg `<'int/None'>`: The argument value to validate (may be None or an int).
+    :param arg `<'int/None'>`: The argument value to validate.
     :param arg_name `<'str'>`: The name of the argument (used in error messages).
-    :param min_value `<'int'>`: The minimum allowed unsigned value (inclusive).
-    :param max_value `<'int'>`: The maximum allowed unsigned value (inclusive).
+    :param min_value `<'int'>`: The minimum allowed value (inclusive).
+    :param max_value `<'int'>`: The maximum allowed value (inclusive).
     :returns `<'int/None'>`: The valid integer within the range, or None.
     :raises `<'InvalidConnectionArgsError'>`: If `arg` is neither None nor an int,
         or if it falls outside the `[min_value, max_value]` range.
