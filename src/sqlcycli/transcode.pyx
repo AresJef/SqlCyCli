@@ -11,7 +11,11 @@ from cpython.set cimport PySet_Size as set_len
 from cpython.dict cimport PyDict_Size as dict_len
 from cpython.list cimport PyList_Size as list_len, PyList_GetItem as list_getitem
 from cpython.tuple cimport PyTuple_Size as tuple_len, PyTuple_GetItem as tuple_getitem
-from cpython.bytes cimport PyBytes_Size as bytes_len, PyBytes_AsString, PyBytes_FromObject
+from cpython.bytes cimport (
+    PyBytes_Size as bytes_len,
+    PyBytes_AsString as bytes_to_chars, 
+    PyBytes_FromObject
+)
 from cpython.unicode cimport (
     PyUnicode_GET_LENGTH as str_len,
     PyUnicode_READ_CHAR as str_read,
@@ -107,25 +111,25 @@ cdef inline str decode_bytes(object data, char* encoding):
 
     :param data `<'bytes'>`: Bytes to decode.
     :param encoding `<'char*'>`: Encoding to use for decoding.
-    :returns: Decoded string `<'str'>`.
+    :returns `<'str'>`: Decoded string.
     """
-    return PyUnicode_Decode(PyBytes_AsString(data), bytes_len(data), encoding, b"surrogateescape")
+    return PyUnicode_Decode(bytes_to_chars(data), bytes_len(data), encoding, b"surrogateescape")
 
 cdef inline str decode_bytes_utf8(object data):
     """Decode bytes to string using 'utf-8' encoding with 'surrogateescape' error handling `<'str'>`.
     
     :param data `<'bytes'>`: Bytes to decode.
-    :returns: Decoded string `<'str'>`.
+    :returns `<'str'>`: Decoded string.
     """
-    return PyUnicode_DecodeUTF8(PyBytes_AsString(data), bytes_len(data), b"surrogateescape")
+    return PyUnicode_DecodeUTF8(bytes_to_chars(data), bytes_len(data), b"surrogateescape")
 
 cdef inline str decode_bytes_ascii(object data):
     """Decode bytes to string using 'ascii' encoding with 'surrogateescape' error handling `<'str'>`.
     
     :param data `<'bytes'>`: Bytes to decode.
-    :returns: Decoded string `<'str'>`.
+    :returns `<'str'>`: Decoded string.
     """
-    return PyUnicode_DecodeASCII(PyBytes_AsString(data), bytes_len(data), b"surrogateescape")
+    return PyUnicode_DecodeASCII(bytes_to_chars(data), bytes_len(data), b"surrogateescape")
 
 cdef inline str bytes_to_literal(object data):
     """Escape bytes object to string literal `<'bytes'>`.
@@ -146,7 +150,7 @@ cdef inline bint is_ascii_digit(char ch) noexcept nogil:
     """
     return 48 <= ch <= 57
 
-cdef inline unsigned long long unpack_uint_big_endian(char* data, Py_ssize_t length, Py_ssize_t pos) noexcept nogil:
+cdef inline unsigned long long unpack_uint_big_endian(const char* data, Py_ssize_t length, Py_ssize_t pos) noexcept nogil:
     """Unpack an unsigned big-endian integer from 'data' at offset 'pos'.
 
     :param data `<'char*'>`: Pointer to the data buffer.
@@ -2596,10 +2600,10 @@ cdef inline object _decode_integer(bytes value):
     ```
     """
     cdef: 
-        Py_ssize_t chs_len = bytes_len(value), i
-        char*      chs     = PyBytes_AsString(value)
-        char       ch0     = chs[0]
-        char       ch
+        Py_ssize_t  chs_len = bytes_len(value), i
+        const char* chs     = bytes_to_chars(value)
+        char        ch0     = chs[0]
+        char        ch
         unsigned long long res
 
     # Negative
@@ -2636,10 +2640,10 @@ cdef inline object _decode_float(bytes value):
     >>> -3.1415  # <'float'>
     """
     cdef:
-        Py_ssize_t chs_len = bytes_len(value), i
-        char*      chs     = PyBytes_AsString(value)
-        char       ch0     = chs[0]
-        char       ch
+        Py_ssize_t  chs_len = bytes_len(value), i
+        const char* chs     = bytes_to_chars(value)
+        char        ch0     = chs[0]
+        char        ch
         bint seen_dot
         unsigned long long i_part
         unsigned long long f_part = 0
@@ -2735,7 +2739,7 @@ cdef inline object _decode_bit(bytes value, bint decode_bit):
     """
     if not decode_bit:
         return value
-    return unpack_uint_big_endian(PyBytes_AsString(value), bytes_len(value), 0)
+    return unpack_uint_big_endian(bytes_to_chars(value), bytes_len(value), 0)
 
 cdef inline object _decode_date(bytes value):
     """(internal) Decode the value from a DATE field `<'datetime.date/str'>`
@@ -2757,9 +2761,9 @@ cdef inline object _decode_date(bytes value):
     ```
     """
     cdef: 
-        Py_ssize_t chs_len = bytes_len(value), i = 0
-        char*      chs     = PyBytes_AsString(value)
-        char       ch      = 0
+        Py_ssize_t  chs_len = bytes_len(value), i = 0
+        const char* chs     = bytes_to_chars(value)
+        char        ch      = 0
         int yy, mm, dd, count
     if chs_len < 5:  # min length 'Y-M-D'
         return PyUnicode_DecodeASCII(chs, chs_len, b"surrogateescape")  # exit
@@ -2825,9 +2829,9 @@ cdef inline object _decode_datetime(bytes value):
     ```
     """
     cdef: 
-        Py_ssize_t chs_len = bytes_len(value), i = 0
-        char*      chs     = PyBytes_AsString(value)
-        char       ch      = 0
+        Py_ssize_t  chs_len = bytes_len(value), i = 0
+        const char* chs     = bytes_to_chars(value)
+        char        ch      = 0
         int yy, mm, dd, hh, mi, ss, us, count
     if chs_len < 5:  # min length 'Y-M-D'
         return PyUnicode_DecodeASCII(chs, chs_len, b"surrogateescape")  # exit
@@ -2936,11 +2940,11 @@ cdef inline object _decode_time(bytes value):
     ```
     """
     cdef:
-        Py_ssize_t chs_len = bytes_len(value), i = 0
-        char*      chs     = PyBytes_AsString(value)
-        char       ch      = 0
-        long long  hh, mi, ss, us, count
-        bint       negate
+        Py_ssize_t  chs_len = bytes_len(value), i = 0
+        const char* chs     = bytes_to_chars(value)
+        char        ch      = 0
+        long long   hh, mi, ss, us, count
+        bint        negate
     if chs_len < 5:  # min length 'H:M:S'
         return PyUnicode_DecodeASCII(chs, chs_len, b"surrogateescape")  # exit
 
@@ -3077,7 +3081,7 @@ cpdef object decode(bytes value, unsigned int field_type, char* encoding, bint i
 
     :param value `<'bytes'>`: The raw byte value received from the server for a single column.
     :param field_type `<'int'>`: The MySQL field type identifier. See `constants.FIELD_TYPE`.
-    :param encoding `<'bytes'>`: The character encoding of the column (e.g. `b'utf8'`).
+    :param encoding `<'char*/bytes'>`: The character encoding of the column (e.g. `b'utf8'`).
     :param is_binary `<'bool'>`: Indicates whether the field is a BINARY-type column.
     :param use_decimal `<'bool'>`: Specifies how the `value` from a DECIMAL field is decoded. Defaults to `False`.
         If True, decode the value as `<'Decimal'>`; otherwise decode as `<'float'>`.

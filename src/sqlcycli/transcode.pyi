@@ -1,3 +1,4 @@
+import cython
 from typing import Any
 
 # Custom Escape Types -------------------------------------------------------------------------
@@ -143,7 +144,7 @@ def escape(
 def decode(
     value: bytes,
     field_type: int,
-    encoding: bytes,
+    encoding: cython.p_char | bytes,
     is_binary: bool,
     use_decimal: bool = False,
     decode_bit: bool = False,
@@ -157,7 +158,7 @@ def decode(
 
     :param value `<'bytes'>`: The raw byte value received from the server for a single column.
     :param field_type `<'int'>`: The MySQL field type identifier. See `constants.FIELD_TYPE`.
-    :param encoding `<'bytes'>`: The character encoding of the column (e.g. `b'utf8'`).
+    :param encoding `<'char*/bytes'>`: The character encoding of the column (e.g. `b'utf8'`).
     :param is_binary `<'bool'>`: Indicates whether the field is a BINARY-type column.
     :param use_decimal `<'bool'>`: Specifies how the `value` from a DECIMAL field is decoded. Defaults to `False`.
         If True, decode the value as `<'Decimal'>`; otherwise decode as `<'float'>`.
