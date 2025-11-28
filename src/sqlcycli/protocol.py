@@ -49,6 +49,14 @@ class MysqlPacket:
         :param data `<'bytes'>`: The raw packet payload (excluding the 4-byte header).
         :param encoding `<'bytes'>`: The encoding of the packet data.
         """
+        self._setup(data, encoding)
+
+    # Setup -----------------------------------------------------------------------------------
+    @cython.cfunc
+    @cython.inline(True)
+    @cython.exceptval(-1, check=False)
+    def _setup(self, data: bytes, encoding: bytes) -> cython.bint:
+        """(internal) Setup the Mysql Packet."""
         # Raw Data
         self._data = data
         self._data_ptr = bytes_to_chars(data)
@@ -65,6 +73,8 @@ class MysqlPacket:
         self._filename = None
         self._plugin_name = None
         self._salt = None
+        # Finished
+        return True
 
     # Property --------------------------------------------------------------------------------
     @property
@@ -508,7 +518,7 @@ class FieldDescriptorPacket(MysqlPacket):
         :param data `<'bytes'>`: The raw packet payload (excluding the 4-byte header).
         :param encoding `<'bytes'>`: The encoding of the packet data.
         """
-        super().__init__(data, encoding)
+        self._setup(data, encoding)
         # fmt: off
         # Parse Field Descriptor
         self._catalog = self.read_length_encoded_string()

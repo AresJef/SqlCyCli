@@ -19,6 +19,8 @@ cdef class MysqlPacket:
         bytes _filename
         bytes _plugin_name
         bytes _salt
+    # Setup
+    cdef inline bint _setup(self, bytes data, bytes encoding) except -1
     # Read Data
     cdef inline bytes read_all_data(self)
     cdef inline bytes read(self, Py_ssize_t size)
