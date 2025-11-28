@@ -18,4 +18,4 @@ cdef class CustomEscapeType(ObjStr):
 cpdef object escape(object data, bint many=?, bint itemize=?)
 
 # Decode
-cpdef object decode(bytes value, unsigned int field_type, char* encoding, bint is_binary, bint use_decimal=?, bint decode_bit=?, bint decode_json=?)
+cpdef object decode(bytes value, unsigned int field_type, const char* encoding, bint is_binary, bint use_decimal=?, bint decode_bit=?, bint decode_json=?)

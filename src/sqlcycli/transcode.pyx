@@ -106,7 +106,7 @@ _JSON_DATETIME_TABLE[ord("]")] = ")"
 
 # Utils ===============================================================================================
 # . bytes
-cdef inline str decode_bytes(object data, char* encoding):
+cdef inline str decode_bytes(object data, const char* encoding):
     """Decode bytes to string using specified encoding with 'surrogateescape' error handling `<'str'>`.
 
     :param data `<'bytes'>`: Bytes to decode.
@@ -2550,7 +2550,7 @@ cpdef object escape(object data, bint many=False, bint itemize=True):
         raise errors.EscapeError(err) from err
 
 # Decode ==============================================================================================
-cdef inline object _decode_string(bytes value, char* encoding, bint is_binary):
+cdef inline object _decode_string(bytes value, const char* encoding, bint is_binary):
     """(internal) Decode the value from a CHAR/BINARY field `<'str/bytes'>`.
 
     :param value `<'bytes'>`: The value from the CHAR/BINARY field.
@@ -3021,7 +3021,7 @@ cdef inline object _decode_time(bytes value):
         except Exception:
             return PyUnicode_DecodeASCII(chs, chs_len, b"surrogateescape")  # exit
 
-cdef inline object _decode_set(bytes value, char* encoding):
+cdef inline object _decode_set(bytes value, const char* encoding):
     """(internal) Decode the value from a SET field `<'set'>`.
 
     :param value `<'bytes'>`: The value from a SET field.
@@ -3039,7 +3039,7 @@ cdef inline object _decode_set(bytes value, char* encoding):
         list   items = str_split(decoded_str, ",", -1)
     return set(items)
 
-cdef inline object _decode_json(bytes value, char* encoding, bint decode_json):
+cdef inline object _decode_json(bytes value, const char* encoding, bint decode_json):
     """(internal) Decode the value from a JSON field `<'Any'>`.
 
     :param value `<'bytes'>`: The value from a JSON field.
@@ -3072,7 +3072,7 @@ cdef inline object _decode_json(bytes value, char* encoding, bint decode_json):
         ) from err
 
 # Decode Function -------------------------------------------------------------------------------------
-cpdef object decode(bytes value, unsigned int field_type, char* encoding, bint is_binary, bint use_decimal=False, bint decode_bit=False, bint decode_json=False):
+cpdef object decode(bytes value, unsigned int field_type, const char* encoding, bint is_binary, bint use_decimal=False, bint decode_bit=False, bint decode_json=False):
     """Decode a raw MySQL field value into the appropriate Python object `<'Any'>`.
 
     This function converts the raw byte sequence returned by the MySQL server
