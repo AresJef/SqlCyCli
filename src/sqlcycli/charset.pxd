@@ -7,11 +7,11 @@ cdef class Charset:
         str _name
         str _collation
         bytes _encoding
-        char* _encoding_c
+        const char* _encoding_ptr
         bint _is_default
         Py_ssize_t _hashcode
     # Methods
-    cpdef bint is_binary(self)
+    cpdef bint is_binary(self) except -1
 
 cdef class Charsets:
     cdef: 

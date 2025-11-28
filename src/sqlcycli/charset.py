@@ -6,7 +6,7 @@
 import cython
 from cython.cimports.cpython.dict import PyDict_SetItem as dict_setitem  # type: ignore
 from cython.cimports.cpython.dict import PyDict_GetItem as dict_getitem  # type: ignore
-from cython.cimports.cpython.dict import PyDict_Contains as dict_contains  # type: ignore
+from cython.cimports.cpython.bytes import PyBytes_AsString as bytes_to_chars  # type: ignore
 
 # Python imports
 from typing import Iterator, Any
@@ -32,7 +32,7 @@ class Charset:
     _name: str
     _collation: str
     _encoding: bytes
-    _encoding_c: cython.pchar
+    _encoding_ptr: cython.p_const_char
     _is_default: cython.bint
     _hashcode: cython.Py_ssize_t
 
@@ -67,7 +67,7 @@ class Charset:
             self._encoding = b"koi8_u"
         else:
             self._encoding = self._name.encode("ascii", "strict")
-        self._encoding_c = self._encoding
+        self._encoding_ptr = bytes_to_chars(self._encoding)
         self._is_default = is_default
         self._hashcode = -1
 
@@ -99,6 +99,7 @@ class Charset:
 
     # Methods ----------------------------------------------------------------------
     @cython.ccall
+    @cython.exceptval(-1, check=False)
     def is_binary(self) -> cython.bint:
         """Check if this charset is the MySQL binary charset (ID == 63). `<'bool'>`."""
         return self._id == 63
