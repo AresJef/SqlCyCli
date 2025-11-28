@@ -1,13 +1,19 @@
 # cython: language_level=3
 
-from libc.string cimport strchr
-from cpython.bytes cimport PyBytes_FromStringAndSize
-from cpython.bytes cimport PyBytes_Size as bytes_len
-from cpython.bytes cimport PyBytes_AsString as bytes_to_chars
-from cpython.unicode cimport PyUnicode_AsEncodedString, PyUnicode_Decode
-from cpython.unicode cimport PyUnicode_DecodeUTF8, PyUnicode_DecodeASCII, PyUnicode_DecodeLatin1
+from libc.string cimport memchr as find_byte_in_memory
+from cpython.bytes cimport (
+    PyBytes_Size as bytes_len,
+    PyBytes_AsString as bytes_to_chars,
+    PyBytes_FromStringAndSize,
+)
+from cpython.unicode cimport (
+    PyUnicode_Decode,
+    PyUnicode_DecodeUTF8,
+    PyUnicode_DecodeASCII,
+    PyUnicode_DecodeLatin1,
+    PyUnicode_AsEncodedString,
+)
 from sqlcycli.charset cimport Charset
-from sqlcycli import errors
 
 # Constants
 cdef:
@@ -27,7 +33,6 @@ cdef:
     object INSERT_VALUES_RE
     #: Regular expression for server version.
     object SERVER_VERSION_RE
-
     # The following values are for the first byte
     # value of MySQL length encoded integer.
     unsigned char NULL_COLUMN  # 251
@@ -36,365 +41,555 @@ cdef:
     unsigned char UNSIGNED_INT24_COLUMN  # 253
     unsigned char UNSIGNED_INT64_COLUMN  # 254
 
-# Utils: Connection
-cdef bytes gen_connect_attrs(list attrs)
-cdef bytes DEFAULT_CONNECT_ATTRS
-cdef str validate_arg_str(object arg, str arg_name, str default)
-cdef object validate_arg_uint(object arg, str arg_name, unsigned int min_val, unsigned int max_val)
-cdef bytes validate_arg_bytes(object arg, str arg_name, char* encoding, str default)
-cdef Charset validate_charset(object charset, object collation, str default_charset)
-cdef int validate_autocommit(object auto) except -2
-cdef int validate_max_allowed_packet(object max_allowed_packet, int default, int maximum)
-cdef str validate_sql_mode(object sql_mode)
-cdef object validate_ssl(object ssl)
-
-# Utils: Query
-cdef inline str format_sql(str sql, object args):
-    """Format the sql with the arguments `<'str'>`.
-
-    :param sql `<'str'>`: The sql to format.
-    :param args `<'str/tuple'>`: The arguments to bound to the SQL.
-    :raises `<'InvalidSQLArgsErorr'>`: If any error occurs.
-    """
-    try:
-        return sql % args
-    except Exception as err:
-        raise errors.InvalidSQLArgsErorr(
-            "\nFailed to format SQL:\n%s\n"
-            "With %s arguments:\n%r\n"
-            "Error: %s" % (sql, type(args), args, err)
-        ) from err
-
 # Utils: string
-cdef inline bytes encode_str(object obj, char* encoding):
-    """Encode string to bytes using the 'encoding' with
-    'surrogateescape' error handling `<'bytes'>`."""
-    return PyUnicode_AsEncodedString(obj, encoding, b"surrogateescape")
+cdef inline bytes encode_str(object data, char* encoding):
+    """Encode string to bytes using the 'encoding' with 'surrogateescape' error handling `<'bytes'>`.
+    
+    :param data `<'str'>`: String to encode.
+    :param encoding `<'char*/bytes'>`: The encoding to use.
+    :returns `<'bytes'>`: Encoded bytes.
+    """
+    return PyUnicode_AsEncodedString(data, encoding, b"surrogateescape")
 
 cdef inline str decode_bytes(object data, char* encoding):
-    """Decode bytes to string using the 'encoding' with
-    "surrogateescape" error handling `<'str'>`."""
+    """Decode bytes to string using specified encoding with 'surrogateescape' error handling `<'str'>`.
+
+    :param data `<'bytes'>`: Bytes to decode.
+    :param encoding `<'char*/bytes'>`: Encoding to use for decoding.
+    :returns `<'str'>`: Decoded string.
+    """
     return PyUnicode_Decode(bytes_to_chars(data), bytes_len(data), encoding, b"surrogateescape")
 
 cdef inline str decode_bytes_utf8(object data):
-    """Decode bytes to string using 'utf-8' encoding with
-    'surrogateescape' error handling `<'str'>`."""
+    """Decode bytes to string using 'utf-8' encoding with 'surrogateescape' error handling `<'str'>`.
+    
+    :param data `<'bytes'>`: Bytes to decode with `'utf-8'` encoding.
+    :returns `<'str'>`: Decoded string.
+    """
     return PyUnicode_DecodeUTF8(bytes_to_chars(data), bytes_len(data), b"surrogateescape")
 
 cdef inline str decode_bytes_ascii(object data):
-    """Decode bytes to string using 'ascii' encoding with
-    'surrogateescape' error handling `<'str'>`."""
+    """Decode bytes to string using 'ascii' encoding with 'surrogateescape' error handling `<'str'>`.
+    
+    :param data `<'bytes'>`: Bytes to decode with `'ascii'` encoding.
+    :returns `<'str'>`: Decoded string.
+    """
     return PyUnicode_DecodeASCII(bytes_to_chars(data), bytes_len(data), b"surrogateescape")
 
 cdef inline str decode_bytes_latin1(object data):
-    """Decode bytes to string using 'latin1' encoding with
-    'surrogateescape' error handling `<'str'>`."""
+    """Decode bytes to string using 'latin1' encoding with 'surrogateescape' error handling `<'str'>`.
+    
+    :param data `<'bytes'>`: Bytes to decode with `'latin1'` encoding.
+    :returns `<'str'>`: Decoded string.
+    """
     return PyUnicode_DecodeLatin1(bytes_to_chars(data), bytes_len(data), b"surrogateescape")
 
-cdef inline Py_ssize_t find_null_term(char* data, Py_ssize_t pos) except -2:
-    """Find the next NULL-terminated starting from 'pos' in the data `<'int'>`."""
-    cdef const char* ptr = data + pos
-    loc = strchr(ptr, 0)
+cdef inline Py_ssize_t find_null_byte(const char* data, Py_ssize_t length, Py_ssize_t pos) except -2:
+    """Find the next NULL ('\\0') byte in a buffer starting at `pos` `<'int'>`.
+
+    The search is restricted to the range `[pos, length)`.
+    If no NULL byte is found in this range, `-1` is returned.
+
+    :param data `<'char*/bytes'>`: Pointer to the beginning of the buffer.
+    :param length `<'int'>`: Total length of the buffer in bytes.
+    :param pos `<'int'>`: Zero-based offset where the search starts.
+    :return `<'int'>`: The index (relative to `data`) of the next NULL byte, or `-1` if no NULL byte is found.
+    :raises `<'ValueError'>`: If `pos` is negative or `length` is negative.
+
+    ## Precondition
+    - `data[0..length-1]` must be a valid readable memory region.
+    """
+    # Guard
+    if pos < 0:
+        raise ValueError("find_null_byte: argument 'pos' cannot be negative.")
+    if length < 0:
+        raise ValueError("find_null_byte: argument 'length' cannot be negative.")
+    cdef Py_ssize_t remain = length - pos
+    if remain <= 0:
+        return -1
+
+    # Find NULL byte
+    cdef:
+        const char* ptr = data + pos
+        const char* loc = <const char*> find_byte_in_memory(ptr, 0, remain)
+
     if loc is NULL:
         return -1
-    return loc - ptr + pos
+    return <Py_ssize_t> (loc - data)
 
-# Utils: Pack custom
-cdef inline bytes pack_I24B(unsigned int i, unsigned char j):
-    """Pack 'I[24bit]B' in little-endian order to `<'bytes'>`.
+# Utils: Pack unsigned integer to bytes
+cdef inline bytes pack_I24B(unsigned long long i, unsigned char b):
+    """Pack a 24-bit little-endian unsigned integer and 
+    a trailing byte into a 4-byte sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The unsigned integer; only least significant 
+        24 bits are preserved (`0 <= i <= 16777215`).
+    :param b `<'int'>`: The trailing byte (0 <= b <= 255).
+    :returns `<'bytes'>`: The packed byte sequence.
+
+    ## Equivalent
+    >>> struct.pack("<I", i)[0:3] + struct.pack("<B", b)
+    """
+    cdef char buf[4]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] =  b
+    return PyBytes_FromStringAndSize(buf, 4)
+
+cdef inline bytes pack_IB(unsigned long long i, unsigned char b):
+    """Pack a 32-bit little-endian unsigned integer and a trailing byte into a 5-byte sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack as a 32-bit little-endian unsigned value.
+    :param b `<'int'>`: The trailing byte (0 <= b <= 255).
+    :returns `<'bytes'>`: The packed 5-byte sequence.
+
+    ## Equivalent
+    >>> struct.pack("<IB", i, b)
+    """
+    cdef char buf[5]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] = (i >> 24) & 0xFF
+    buf[4] =  b
+    return PyBytes_FromStringAndSize(buf, 5)
+
+cdef inline bytes pack_IIB23s(unsigned long long i1, unsigned long long i2, unsigned char b):
+    """Pack two 32-bit little-endian unsigned integers, a byte, and 
+    a 23-byte zero-filled string into a 32-byte sequence `<'bytes'>`.
+
+    :param i1 `<'int'>`: The first 32-bit unsigned integer.
+    :param i2 `<'int'>`: The second 32-bit unsigned integer.
+    :param b `<'int'>`: The trailing byte (0 <= b <= 255).
+    :returns `<'bytes'>`: The packed 32-byte sequence.
+
+    ## Equivalent
+    >>> struct.pack("<IIB23s", i1, i2, b, b"")
+    """
+    cdef Py_ssize_t idx
+    cdef char buf[32]
+    buf[0] =  i1        & 0xFF
+    buf[1] = (i1 >> 8)  & 0xFF
+    buf[2] = (i1 >> 16) & 0xFF
+    buf[3] = (i1 >> 24) & 0xFF
+    buf[4] =  i2        & 0xFF
+    buf[5] = (i2 >> 8)  & 0xFF
+    buf[6] = (i2 >> 16) & 0xFF
+    buf[7] = (i2 >> 24) & 0xFF
+    buf[8] =  b
+    for idx in range(9, 32):
+        buf[idx] = 0
+    return PyBytes_FromStringAndSize(buf, 32)
+
+cdef inline bytes pack_uint8(unsigned int i):
+    """Pack an unsigned 8-bit integer into 1-byte sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        8 bits are preserved (`0 <= i <= 255`).
+    :returns `<'bytes'>`: A 1-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<B", i)
+    """
+    cdef char buf[1]
+    buf[0] = i & 0xFF
+    return PyBytes_FromStringAndSize(buf, 1)
+
+cdef inline bytes pack_uint16(unsigned int i):
+    """Pack an unsigned 16-bit integer into 2-byte little-endian sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        16 bits are preserved (`0 <= i <= 65535`).
+    :returns `<'bytes'>`: A 2-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<H", i)
+    """
+    cdef char buf[2]
+    buf[0] =  i       & 0xFF
+    buf[1] = (i >> 8) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 2)
+
+cdef inline bytes pack_uint24(unsigned long long i):
+    """Pack an unsigned 24-bit integer into 3-byte little-endian sequence `<'bytes'>`.
     
-    Equivalent to:
-    >>> struct.pack("<I", i)[:3] + struct.pack("<B", b)
+    :param i `<'int'>`: The integer to pack; only least significant 
+        24 bits are preserved (`0 <= i <= 16777215`).
+    :returns `<'bytes'>`: A 3-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<I", i)[:3]
     """
-    cdef char buffer[4]
-    buffer[0] = i & 0xFF
-    buffer[1] = (i >> 8) & 0xFF
-    buffer[2] = (i >> 16) & 0xFF
-    buffer[3] = j
-    return PyBytes_FromStringAndSize(buffer, 4)
+    cdef char buf[3]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 3)
 
-cdef inline bytes pack_IB(unsigned int i, unsigned char j):
-    """Pack 'IB' in little-endian order to `<'bytes'>`.
+cdef inline bytes pack_uint32(unsigned long long i):
+    """Pack an unsigned 32-bit integer into 4-byte little-endian sequence `<'bytes'>`.
 
-    Equivalent to: 
-    >>> struct.pack("<IB", i, j)
+    :param i `<'int'>`: The integer to pack; only least significant 
+        32 bits are preserved (`0 <= i <= 4294967295`).
+    :returns `<'bytes'>`: A 4-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<I", i)
     """
-    cdef char buffer[5]
-    buffer[0] = i & 0xFF
-    buffer[1] = (i >> 8) & 0xFF
-    buffer[2] = (i >> 16) & 0xFF
-    buffer[3] = (i >> 24) & 0xFF
-    buffer[4] = j
-    return PyBytes_FromStringAndSize(buffer, 5)
+    cdef char buf[4]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] = (i >> 24) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 4)
 
-cdef inline bytes pack_IIB23s(unsigned int i, unsigned int j, unsigned char k):
-    """Pack 'IIB23s' in little-endian order to `<'bytes'>`.
+cdef inline bytes pack_uint64(unsigned long long i):
+    """Pack an unsigned 64-bit integer into 8-byte little-endian sequence `<'bytes'>`.
+    
+    :param i `<'int'>`: The integer to pack; only least significant 
+        64 bits are preserved (`0 <= i <= 18446744073709551615`).
+    :returns `<'bytes'>`: An 8-byte sequence containing the packed value.
 
-    Equivalent to: 
-    >>> struct.pack("<IIB23s", i, j, k, b"")
+    ## Equivalent
+    >>> struct.pack("<Q", i)
     """
-    cdef char buffer[32]
-    buffer[0] = i & 0xFF
-    buffer[1] = (i >> 8) & 0xFF
-    buffer[2] = (i >> 16) & 0xFF
-    buffer[3] = (i >> 24) & 0xFF
-    buffer[4] = j & 0xFF
-    buffer[5] = (j >> 8) & 0xFF
-    buffer[6] = (j >> 16) & 0xFF
-    buffer[7] = (j >> 24) & 0xFF
-    buffer[8] = k
-    for i in range(23):
-        buffer[i + 9] = 0
-    return PyBytes_FromStringAndSize(buffer, 32)
+    cdef char buf[8]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] = (i >> 24) & 0xFF
+    buf[4] = (i >> 32) & 0xFF
+    buf[5] = (i >> 40) & 0xFF
+    buf[6] = (i >> 48) & 0xFF
+    buf[7] = (i >> 56) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 8)
 
 cdef inline bytes gen_length_encoded_integer(unsigned long long i):
-    """Generate 'Length Coded Integer' for MySQL `<'bytes'>."""
-    # https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger
-    cdef char buffer[9]
-    # value 251 is reserved for NULL, so only 0-250, 252-254
-    # are used as the first byte of a length-encoded integer.
-    if i < UNSIGNED_CHAR_COLUMN:  # 251
-        buffer[0] = i & 0xFF
-        return PyBytes_FromStringAndSize(buffer, 1)
-    elif i < 65_536:  # 1 << 16
-        buffer[0] = UNSIGNED_SHORT_COLUMN  # 252
-        buffer[1] = i & 0xFF
-        buffer[2] = (i >> 8) & 0xFF
-        return PyBytes_FromStringAndSize(buffer, 3)
-    elif i < 16_777_216: # 1 << 24
-        buffer[0] = UNSIGNED_INT24_COLUMN  # 253
-        buffer[1] = i & 0xFF
-        buffer[2] = (i >> 8) & 0xFF
-        buffer[3] = (i >> 16) & 0xFF
-        return PyBytes_FromStringAndSize(buffer, 4)
-    else: # 1 << 64
-        buffer[0] = UNSIGNED_INT64_COLUMN  # 254
-        buffer[1] = i & 0xFF
-        buffer[2] = (i >> 8) & 0xFF
-        buffer[3] = (i >> 16) & 0xFF
-        buffer[4] = (i >> 24) & 0xFF
-        buffer[5] = (i >> 32) & 0xFF
-        buffer[6] = (i >> 40) & 0xFF
-        buffer[7] = (i >> 48) & 0xFF
-        buffer[8] = (i >> 56) & 0xFF
-        return PyBytes_FromStringAndSize(buffer, 9)
+    """Generate a MySQL Protocol `LengthEncodedInteger` `<'bytes'>`.
 
-# Utils: Pack unsigned integers
-cdef inline bytes pack_uint8(unsigned int value):
-    """Pack `UNSIGNED` 8-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<B", value)
-    """
-    cdef char buffer[1]
-    buffer[0] = value & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 1)
+    :param i `<'int'>`: The integer to encode.
+    :returns `<'bytes'>`: The length-encoded integer as bytes.
 
-cdef inline bytes pack_uint16(unsigned int value):
-    """Pack `UNSIGNED` 16-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<H", value)
-    """
-    cdef char buffer[2]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 2)
+    ## Behavior
+    - Values 0..250 are encoded as a single byte.
+    - Values 251..65535 are encoded as 0xFC + 2-byte little-endian.
+    - Values 65536..16777215 are encoded as 0xFD + 3-byte little-endian.
+    - Larger values are encoded as 0xFE + 8-byte little-endian.
 
-cdef inline bytes pack_uint24(unsigned int value):
-    """Pack `UNSIGNED` 24-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<I", value)[:3]
+    ## Reference
+    See: [LengthEncodedInteger](https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger)
     """
-    cdef char buffer[3]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 3)
+    cdef char buf[9]
+    #: Value 251 is reserved for NULL, so only 0-250, 252-254
+    #: are used as the first byte of a length-encoded integer.
+    if i < UNSIGNED_CHAR_COLUMN:        # 251
+        buf[0] =  i        & 0xFF
+        return PyBytes_FromStringAndSize(buf, 1)
 
-cdef inline bytes pack_uint32(unsigned long long value):
-    """Pack `UNSIGNED` 32-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<I", value)
-    """
-    cdef char buffer[4]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    buffer[3] = (value >> 24) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 4)
+    elif i < 1 << 16:
+        buf[0] = UNSIGNED_SHORT_COLUMN  # 252
+        buf[1] =  i        & 0xFF
+        buf[2] = (i >> 8)  & 0xFF
+        return PyBytes_FromStringAndSize(buf, 3)
 
-cdef inline bytes pack_uint64(unsigned long long value):
-    """Pack `UNSIGNED` 64-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<Q", value)
+    elif i < 1 << 24:
+        buf[0] = UNSIGNED_INT24_COLUMN  # 253
+        buf[1] =  i        & 0xFF
+        buf[2] = (i >> 8)  & 0xFF
+        buf[3] = (i >> 16) & 0xFF
+        return PyBytes_FromStringAndSize(buf, 4)
+
+    else:
+        buf[0] = UNSIGNED_INT64_COLUMN  # 254
+        buf[1] =  i        & 0xFF
+        buf[2] = (i >> 8)  & 0xFF
+        buf[3] = (i >> 16) & 0xFF
+        buf[4] = (i >> 24) & 0xFF
+        buf[5] = (i >> 32) & 0xFF
+        buf[6] = (i >> 40) & 0xFF
+        buf[7] = (i >> 48) & 0xFF
+        buf[8] = (i >> 56) & 0xFF
+        return PyBytes_FromStringAndSize(buf, 9)
+
+# Utils: Pack integer to bytes
+cdef inline bytes pack_int8(int i):
+    """Pack a signed 8-bit integer into 1-byte sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        8 bits are preserved (`-128 <= i <= 127`).
+    :returns `<'bytes'>`: A 1-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<b", i)
     """
-    cdef char buffer[8]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    buffer[3] = (value >> 24) & 0xFF
-    buffer[4] = (value >> 32) & 0xFF
-    buffer[5] = (value >> 40) & 0xFF
-    buffer[6] = (value >> 48) & 0xFF
-    buffer[7] = (value >> 56) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 8)
+    cdef char buf[1]
+    buf[0] = i & 0xFF
+    return PyBytes_FromStringAndSize(buf, 1)
+
+cdef inline bytes pack_int16(int i):
+    """Pack a signed 16-bit integer into 2-byte little-endian sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        16 bits are preserved (`-32768 <= i <= 32767`).
+    :returns `<'bytes'>`: A 2-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<h", i)
+    """
+    cdef char buf[2]
+    buf[0] =  i       & 0xFF
+    buf[1] = (i >> 8) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 2)
+
+cdef inline bytes pack_int24(long long i):
+    """Pack a signed 24-bit integer into 3-byte little-endian sequence `<'bytes'>`.
+    
+    :param i `<'int'>`: The integer to pack; only least significant 
+        24 bits are preserved (`-8388608 <= i <= 8388607`).
+    :returns `<'bytes'>`: A 3-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<i", i)[:3]
+    """
+    cdef char buf[3]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 3)
+
+cdef inline bytes pack_int32(long long i):
+    """Pack a signed 32-bit integer into 4-byte little-endian sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        32 bits are preserved (`-2147483648 <= i <= 2147483647`).
+    :returns `<'bytes'>`: A 4-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<i", i)
+    """
+    cdef char buf[4]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] = (i >> 24) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 4)
+
+cdef inline bytes pack_int64(long long i):
+    """Pack a signed 64-bit integer into 8-byte little-endian sequence `<'bytes'>`.
+
+    :param i `<'int'>`: The integer to pack; only least significant 
+        64 bits are preserved (`-9223372036854775808 <= i <= 9223372036854775807`).
+    :returns `<'bytes'>`: An 8-byte sequence containing the packed value.
+
+    ## Equivalent
+    >>> struct.pack("<q", i)
+    """
+    cdef char buf[8]
+    buf[0] =  i        & 0xFF
+    buf[1] = (i >> 8)  & 0xFF
+    buf[2] = (i >> 16) & 0xFF
+    buf[3] = (i >> 24) & 0xFF
+    buf[4] = (i >> 32) & 0xFF
+    buf[5] = (i >> 40) & 0xFF
+    buf[6] = (i >> 48) & 0xFF
+    buf[7] = (i >> 56) & 0xFF
+    return PyBytes_FromStringAndSize(buf, 8)
 
 # Utils: Unpack unsigned integer
-cdef inline unsigned char unpack_uint8(char* data, Py_ssize_t pos):
-    """Unpack (read) `UNSIGNED` 8-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline unsigned char unpack_uint8(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack an unsigned 8-bit integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the byte is read from.
+    :returns `<'int'>`: The unpacked unsigned 8-bit integer.
     """
+    # Guard
+    if pos < 0:
+        return 0
+    
+    # Unpack
     return <unsigned char> data[pos]
 
-cdef inline unsigned short unpack_uint16(char* data, Py_ssize_t pos):
-    """Unpack (read) `UNSIGNED` 16-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline unsigned short unpack_uint16(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack an unsigned 16-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 1]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 16-bit integer starts.
+    :returns `<'int'>`: The unpacked unsigned 16-bit integer.
     """
+    # Guard
+    if pos < 0:
+        return 0
+
+    # Unpack
     cdef:
-        unsigned short p0 = <unsigned char> data[pos]
-        unsigned short p1 = <unsigned char> data[pos + 1]
-        unsigned short res = p0 | (p1 << 8)
-    return res
+        const unsigned char* p = <const unsigned char*> (data + pos)
+        unsigned short v0 = p[0], v1 = p[1]
+    return v0 | (v1 << 8)
 
-cdef inline unsigned int unpack_uint24(char* data, Py_ssize_t pos):
-    """Unpack (read) `UNSIGNED` 24-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline unsigned int unpack_uint24(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack an unsigned 24-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 2]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 24-bit integer starts.
+    :returns `<'int'>`: The unpacked unsigned 24-bit integer.
     """
+    # Guard
+    if pos < 0:
+        return 0
+
+    # Unpack
     cdef:
-        unsigned int p0 = <unsigned char> data[pos]
-        unsigned int p1 = <unsigned char> data[pos + 1]
-        unsigned int p2 = <unsigned char> data[pos + 2]
-        unsigned int res = p0 | (p1 << 8) | (p2 << 16)
-    return res
+        const unsigned char* p = <const unsigned char*> (data + pos)
+        unsigned int v0 = p[0], v1 = p[1], v2 = p[2]
+    return v0 | (v1 << 8) | (v2 << 16)
 
-cdef inline unsigned int unpack_uint32(char* data, Py_ssize_t pos):
-    """Unpack (read) `UNSIGNED` 32-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline unsigned int unpack_uint32(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack an unsigned 32-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 3]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 32-bit integer starts.
+    :returns `<'int'>`: The unpacked unsigned 32-bit integer.
     """
+    # Guard
+    if pos < 0:
+        return 0
+
+    # Unpack
     cdef:
-        unsigned int p0 = <unsigned char> data[pos]
-        unsigned int p1 = <unsigned char> data[pos + 1]
-        unsigned int p2 = <unsigned char> data[pos + 2]
-        unsigned int p3 = <unsigned char> data[pos + 3]
-        unsigned int res = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-    return res
+        const unsigned char* p = <const unsigned char*> (data + pos)
+        unsigned int v0 = p[0], v1 = p[1], v2 = p[2], v3 = p[3]
+    return v0 | (v1 << 8) | (v2 << 16) | (v3 << 24)
 
-cdef inline unsigned long long unpack_uint64(char* data, Py_ssize_t pos):
-    """Unpack (read) `UNSIGNED` 64-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline unsigned long long unpack_uint64(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack an unsigned 64-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 7]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 64-bit integer starts.
+    :returns `<'int'>`: The unpacked unsigned 64-bit integer.
     """
+    # Guard
+    if pos < 0:
+        return 0
+
+    # Unpack
     cdef:
-        unsigned long long p0 = <unsigned char> data[pos]
-        unsigned long long p1 = <unsigned char> data[pos + 1]
-        unsigned long long p2 = <unsigned char> data[pos + 2]
-        unsigned long long p3 = <unsigned char> data[pos + 3]
-        unsigned long long p4 = <unsigned char> data[pos + 4]
-        unsigned long long p5 = <unsigned char> data[pos + 5]
-        unsigned long long p6 = <unsigned char> data[pos + 6]
-        unsigned long long p7 = <unsigned char> data[pos + 7]
-        unsigned long long res = (
-            p0 | (p1 << 8) | (p2 << 16) | (p3 << 24) | (p4 << 32)
-            | (p5 << 40) | (p6 << 48) | (p7 << 56) )
-    return res
-
-# Utils: Pack signed integer
-cdef inline bytes pack_int8(int value):
-    """Pack `SIGNED` 8-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<b", value)
-    """
-    cdef char buffer[1]
-    buffer[0] = value & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 1)
-
-cdef inline bytes pack_int16(int value):
-    """Pack `SIGNED` 16-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<h", value)
-    """
-    cdef char buffer[2]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 2)
-
-cdef inline bytes pack_int24(int value):
-    """Pack `SIGNED` 24-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<i", value)[:3]
-    """
-    cdef char buffer[3]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 3)
-
-cdef inline bytes pack_int32(long long value):
-    """Pack `SIGNED` 32-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<i", value)
-    """
-    cdef char buffer[4]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    buffer[3] = (value >> 24) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 4)
-
-cdef inline bytes pack_int64(long long value):
-    """Pack `SIGNED` 64-bit integer in little-endian order to `<'bytes'>`.
-    
-    Equivalent to:
-    >>> struct.pack("<q", value)
-    """
-    cdef char buffer[8]
-    buffer[0] = value & 0xFF
-    buffer[1] = (value >> 8) & 0xFF
-    buffer[2] = (value >> 16) & 0xFF
-    buffer[3] = (value >> 24) & 0xFF
-    buffer[4] = (value >> 32) & 0xFF
-    buffer[5] = (value >> 40) & 0xFF
-    buffer[6] = (value >> 48) & 0xFF
-    buffer[7] = (value >> 56) & 0xFF
-    return PyBytes_FromStringAndSize(buffer, 8)
+        const unsigned char* p = <const unsigned char*> (data + pos)
+        unsigned long long v0 = p[0], v1 = p[1], v2 = p[2], v3 = p[3]
+        unsigned long long v4 = p[4], v5 = p[5], v6 = p[6], v7 = p[7]
+    return v0 | (v1 << 8) | (v2 << 16) | (v3 << 24) | (v4 << 32) | (v5 << 40) | (v6 << 48) | (v7 << 56)
 
 # Utils: Unpack signed integer
-cdef inline signed char unpack_int8(char* data, Py_ssize_t pos):
-    """Unpack (read) `SIGNED` 8-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline char unpack_int8(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack a signed 8-bit integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'char*/bytes'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the byte is read from.
+    :returns `<'int'>`: The unpacked signed 8-bit integer.
     """
-    return <signed char> data[pos]
+    return <signed char> unpack_uint8(data, pos)
 
-cdef inline short unpack_int16(char* data, Py_ssize_t pos):
-    """Unpack (read) `SIGNED` 16-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline short unpack_int16(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack a signed 16-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 1]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'const char*'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 16-bit integer starts.
+    :returns `<'int'>`: The unpacked signed 16-bit integer.
     """
-    return <short> unpack_uint16(data, pos)
+    return <signed short> unpack_uint16(data, pos)
 
-cdef inline int unpack_int24(char* data, Py_ssize_t pos):
-    """Unpack (read) `SIGNED` 24-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline int unpack_int24(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack a signed 24-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 2]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'const char*'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 24-bit integer starts.
+    :returns `<'int'>`: The unpacked signed 24-bit integer.
     """
-    cdef int res = <int> unpack_uint24(data, pos)
-    return res if res < 0x800000 else res - 0x1000000
+    cdef int i = <signed int> unpack_uint24(data, pos)
+    return i if i < 0x800000 else i - 0x1000000
 
-cdef inline int unpack_int32(char* data, Py_ssize_t pos):
-    """Unpack (read) `SIGNED` 32-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline int unpack_int32(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack a signed 32-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 3]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'const char*'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 32-bit integer starts.
+    :returns `<'int'>`: The unpacked signed 32-bit integer.
     """
-    return <int> unpack_uint32(data, pos)
+    return <signed int> unpack_uint32(data, pos)
 
-cdef inline long long unpack_int64(char* data, Py_ssize_t pos):
-    """Unpack (read) `SIGNED` 64-bit integer from 'data'
-    at the given 'pos' in little-endian order `<'int'>`.
+cdef inline long long unpack_int64(const char* data, Py_ssize_t pos) noexcept nogil:
+    """Unpack a signed 64-bit little-endian integer from 'data' at offset 'pos'.
+
+    ## Precondition
+    - `pos` must be non-negative; otherwise return `0` directly.
+    - `data[pos + 7]` must be within a valid readable buffer; 
+        otherwise leading to undefined behavior.
+
+    :param data `<'const char*'>`: Pointer to the byte buffer.
+    :param pos  `<'int'>`: Zero-based offset where the 64-bit integer starts.
+    :returns `<'int'>`: The unpacked signed 64-bit integer.
     """
-    return <long long> unpack_uint64(data, pos)
+    return <signed long long> unpack_uint64(data, pos)
 
+# Utils: Query
+cpdef str format_sql(str sql, object args)
 
+# Utils: Connection
+cpdef bytes gen_connect_attrs(list attrs)
+cdef bytes DEFAULT_CONNECT_ATTRS
+
+# Utils: Argument Validator
+cpdef str validate_arg_str(object arg, str arg_name, str default)
+cpdef object validate_arg_uint(object arg, str arg_name, unsigned int min_value, unsigned int max_value)
+cpdef bytes validate_arg_bytes(object arg, str arg_name, char* encoding, str default)
+cpdef Charset validate_charset(object charset, object collation, str default_charset)
+cpdef int validate_autocommit(object autocommit) except -2
+cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, int max_value)
+cpdef str validate_sql_mode(object sql_mode)
+cpdef object validate_ssl(object ssl)
