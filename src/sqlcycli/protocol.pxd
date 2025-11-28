@@ -5,10 +5,10 @@ cdef class MysqlPacket:
     cdef:
         # . raw data
         bytes _data
-        char* _data_c
+        const char* _data_ptr
+        Py_ssize_t _data_size
+        Py_ssize_t _pos
         char* _encoding
-        unsigned long long _size
-        unsigned long long _pos
         # . packet data
         unsigned long long _affected_rows
         unsigned long long _insert_id
@@ -21,7 +21,7 @@ cdef class MysqlPacket:
         bytes _salt
     # Read Data
     cdef inline bytes read_all_data(self)
-    cdef inline bytes read(self, unsigned long long size)
+    cdef inline bytes read(self, Py_ssize_t size)
     cdef inline bytes read_remains(self)
     cdef inline unsigned long long read_length_encoded_integer(self)
     cdef inline bytes read_length_encoded_string(self)
@@ -43,8 +43,8 @@ cdef class MysqlPacket:
     cdef inline bint is_resultset_packet(self) except -1
     cdef inline bint is_error_packet(self) except -1
     # Curosr
-    cdef inline bint advance(self, unsigned long long length) except -1
-    cdef inline bint rewind(self, unsigned long long position) except -1
+    cdef inline bint advance(self, Py_ssize_t length) except -1
+    cdef inline bint rewind(self, Py_ssize_t position) except -1
     # Error
     cpdef bint check_error(self) except -1
     cdef inline bint raise_error(self) except -1

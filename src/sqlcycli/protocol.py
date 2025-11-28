@@ -26,10 +26,10 @@ class MysqlPacket:
 
     # Raw Data
     _data: bytes
-    _data_c: cython.pchar
-    _encoding: cython.pchar
-    _size: cython.ulonglong
-    _pos: cython.ulonglong
+    _data_ptr: cython.p_const_char
+    _data_size: cython.Py_ssize_t
+    _pos: cython.Py_ssize_t
+    _encoding: cython.p_char
     # Packet Data
     _affected_rows: cython.ulonglong
     _insert_id: cython.ulonglong
@@ -51,10 +51,10 @@ class MysqlPacket:
         """
         # Raw Data
         self._data = data
-        self._data_c = bytes_to_chars(data)
-        self._encoding = bytes_to_chars(encoding)
-        self._size = bytes_len(data)
+        self._data_ptr = bytes_to_chars(data)
+        self._data_size = bytes_len(data)
         self._pos = 0
+        self._encoding = bytes_to_chars(encoding)
         # Packet Data
         self._affected_rows = 0
         self._insert_id = 0
@@ -150,7 +150,7 @@ class MysqlPacket:
 
     @cython.cfunc
     @cython.inline(True)
-    def read(self, size: cython.ulonglong) -> bytes:
+    def read(self, size: cython.Py_ssize_t) -> bytes:
         """(cfunc) Read a fixed number of bytes from the current cursor
         position, and advances the cursor by `size` `<'bytes'>`.
 
@@ -158,16 +158,16 @@ class MysqlPacket:
         :returns `<'bytes'>`: The read bytes from the packet.
         :raises `MysqlPacketCursorError`: If reading past end of packet.
         """
-        pos: cython.ulonglong = self._pos
-        end: cython.ulonglong = pos + size
-        if end > self._size:
+        pos: cython.Py_ssize_t = self._pos
+        end: cython.Py_ssize_t = pos + size
+        if end > self._data_size:
             raise errors.MysqlPacketCursorError(
                 "<'%s'>\nRequested data size overflow:\n"
                 "Expected Size=%d | Current Position: %d | Data Length: %d"
-                % (self.__class__.__name__, size, self._pos, self._size)
+                % (self.__class__.__name__, size, self._pos, self._data_size)
             )
         self._pos = end
-        return self._data_c[pos:end]
+        return self._data_ptr[pos:end]
 
     @cython.cfunc
     @cython.inline(True)
@@ -176,12 +176,12 @@ class MysqlPacket:
         end of the packet `<'bytes'>`.
         """
         # No more data remains
-        pos: cython.ulonglong = self._pos
-        if pos >= self._size:
+        pos: cython.Py_ssize_t = self._pos
+        if pos >= self._data_size:
             return b""
         # Read remaining data
-        self._pos = self._size  # eof
-        return self._data_c[pos : self._size]
+        self._pos = self._data_size  # eof
+        return self._data_ptr[pos : self._data_size]
 
     @cython.cfunc
     @cython.inline(True)
@@ -230,45 +230,45 @@ class MysqlPacket:
     def _read_uint8(self) -> cython.uchar:
         """(internal) Read a 8-bit unsigned integer from the current packet
         cursor position and advance the cursor forward `<'int'>`."""
-        pos: cython.ulonglong = self._pos
+        pos: cython.Py_ssize_t = self._pos
         self._pos = pos + 1
-        return utils.unpack_uint8(self._data_c, pos)
+        return utils.unpack_uint8(self._data_ptr, pos)
 
     @cython.cfunc
     @cython.inline(True)
     def _read_uint16(self) -> cython.ushort:
         """(internal) Read a 16-bit unsigned integer from the current packet
         cursor position and advance the cursor forward `<'int'>`."""
-        pos: cython.ulonglong = self._pos
+        pos: cython.Py_ssize_t = self._pos
         self._pos = pos + 2
-        return utils.unpack_uint16(self._data_c, pos)
+        return utils.unpack_uint16(self._data_ptr, pos)
 
     @cython.cfunc
     @cython.inline(True)
     def _read_uint24(self) -> cython.uint:
         """(internal) Read a 24-bit unsigned integer from the current packet
         cursor position and advance the cursor forward `<'int'>`."""
-        pos: cython.ulonglong = self._pos
+        pos: cython.Py_ssize_t = self._pos
         self._pos = pos + 3
-        return utils.unpack_uint24(self._data_c, pos)
+        return utils.unpack_uint24(self._data_ptr, pos)
 
     @cython.cfunc
     @cython.inline(True)
     def _read_uint32(self) -> cython.uint:
         """(internal) Read a 32-bit unsigned integer from the current packet
         cursor position and advance the cursor forward `<'int'>`."""
-        pos: cython.ulonglong = self._pos
+        pos: cython.Py_ssize_t = self._pos
         self._pos = pos + 4
-        return utils.unpack_uint32(self._data_c, pos)
+        return utils.unpack_uint32(self._data_ptr, pos)
 
     @cython.cfunc
     @cython.inline(True)
     def _read_uint64(self) -> cython.ulonglong:
         """(internal) Read a 64-bit unsigned integer from the current packet
         cursor position and advance the cursor forward `<'int'>`."""
-        pos: cython.ulonglong = self._pos
+        pos: cython.Py_ssize_t = self._pos
         self._pos = pos + 8
-        return utils.unpack_uint64(self._data_c, pos)
+        return utils.unpack_uint64(self._data_ptr, pos)
 
     # Read Packet -----------------------------------------------------------------------------
     @cython.cfunc
@@ -277,7 +277,7 @@ class MysqlPacket:
     def is_ok_packet(self) -> cython.bint:
         """(cfunc) Check if is an OK packet `<'bool'>`."""
         # https://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
-        return self._size >= 7 and self._data_c[0] == 0
+        return self._data_size >= 7 and self._data_ptr[0] == 0
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
@@ -304,7 +304,7 @@ class MysqlPacket:
     @cython.exceptval(-1, check=False)
     def is_load_local_packet(self) -> cython.bint:
         """(cfunc) Check if is a LOAD DATA LOCAL INFILE packet `<'bool'>`."""
-        return utils.unpack_uint8(self._data_c, 0) == 0xFB
+        return utils.unpack_uint8(self._data_ptr, 0) == 0xFB
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
@@ -329,7 +329,7 @@ class MysqlPacket:
         # http://dev.mysql.com/doc/internals/en/generic-response-packets.html#packet-EOF_Packet
         # Caution: \xFE may be LengthEncodedInteger.
         # If \xFE is LengthEncodedInteger header, 8bytes followed.
-        return self._size < 9 and utils.unpack_uint8(self._data_c, 0) == 0xFE
+        return self._data_size < 9 and utils.unpack_uint8(self._data_ptr, 0) == 0xFE
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
@@ -354,7 +354,7 @@ class MysqlPacket:
     def is_auth_switch_request(self) -> cython.bint:
         """(cfunc) Check if is an AuthSwitchRequest packet `<'bool'>`."""
         # http://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::AuthSwitchRequest
-        return utils.unpack_uint8(self._data_c, 0) == 0xFE
+        return utils.unpack_uint8(self._data_ptr, 0) == 0xFE
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
@@ -369,16 +369,18 @@ class MysqlPacket:
         # Parse
         self._pos += 1  # skip 1 (0)
         # . plugin name
-        loc: cython.Py_ssize_t = utils.find_null_term(self._data_c, self._pos)
+        loc: cython.Py_ssize_t = utils.find_null_byte(
+            self._data_ptr, self._data_size, self._pos
+        )
         if loc < 0:
             return True
-        self._plugin_name = self._data_c[self._pos : loc]
+        self._plugin_name = self._data_ptr[self._pos : loc]
         self._pos = loc + 1
         # . salt
-        loc = utils.find_null_term(self._data_c, self._pos)
+        loc = utils.find_null_byte(self._data_ptr, self._data_size, self._pos)
         if loc < 0:
             return True
-        self._salt = self._data_c[self._pos : loc]
+        self._salt = self._data_ptr[self._pos : loc]
         self._pos = loc + 1
         return True
 
@@ -388,34 +390,39 @@ class MysqlPacket:
     def is_extra_auth_data(self) -> cython.bint:
         """(cfunc) Check if the packet contains extra auth data `<'bool'>`."""
         # https://dev.mysql.com/doc/internals/en/successful-authentication.html
-        return self._data_c[0] == 1
+        return self._data_ptr[0] == 1
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def is_resultset_packet(self) -> cython.bint:
         """(cfunc) Check if is a resultset row packet `<'bool'>`."""
-        return 1 <= utils.unpack_uint8(self._data_c, 0) <= 250
+        return 1 <= utils.unpack_uint8(self._data_ptr, 0) <= 250
 
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
     def is_error_packet(self) -> cython.bint:
         """(cfunc) Check if is an Error packet `<'bool'>`."""
-        return utils.unpack_uint8(self._data_c, 0) == 0xFF
+        return utils.unpack_uint8(self._data_ptr, 0) == 0xFF
 
     # Curosr ----------------------------------------------------------------------------------
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def advance(self, length: cython.ulonglong) -> cython.bint:
+    def advance(self, length: cython.Py_ssize_t) -> cython.bint:
         """(cfunc) Advance the internal cursor by `length` bytes."""
-        pos: cython.ulonglong = self._pos + length
-        if pos > self._size:
+        if length < 0:
+            raise errors.MysqlPacketCursorError(
+                "'<%s'>\nCan't advance packet cursor by negative length %d"
+                % (self.__class__.__name__, length)
+            )
+        pos: cython.Py_ssize_t = self._pos + length
+        if pos > self._data_size:
             raise errors.MysqlPacketCursorError(
                 "'<%s'>\nCan't advance packet cursor position by: %d\n"
                 "Current Position=%d | Data Length=%d"
-                % (self.__class__.__name__, pos, self._pos, self._size)
+                % (self.__class__.__name__, pos, self._pos, self._data_size)
             )
         self._pos = pos
         return True
@@ -423,13 +430,13 @@ class MysqlPacket:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def rewind(self, position: cython.ulonglong) -> cython.bint:
+    def rewind(self, position: cython.Py_ssize_t) -> cython.bint:
         """(cfunc) Rewind or jump the cursor to the given absolute `position`."""
-        if position > self._size:
+        if not 0 <= position <= self._data_size:
             raise errors.MysqlPacketCursorError(
                 "'<%s'>\nCan't set packet cursor position to: %s\n"
                 "Current Position=%d | Data Length=%d"
-                % (self.__class__.__name__, position, self._pos, self._size)
+                % (self.__class__.__name__, position, self._pos, self._data_size)
             )
         self._pos = position
         return True
@@ -451,7 +458,7 @@ class MysqlPacket:
 
         Should only be called if the packet is known to be an Error packet.
         """
-        errors.raise_mysql_exception(self._data_c, self._size)
+        errors.raise_mysql_exception(self._data_ptr, self._data_size)
         return True
 
 
@@ -468,7 +475,7 @@ class FieldDescriptorPacket(MysqlPacket):
         - original column name
     Then reads numeric metadata: character set, column length, type, flags, scale.
 
-    Provides PEP 249-style column description and individual 
+    Provides PEP 249-style column description and individual
     properties for each piece of metadata.
     """
 
@@ -501,24 +508,9 @@ class FieldDescriptorPacket(MysqlPacket):
         :param data `<'bytes'>`: The raw packet payload (excluding the 4-byte header).
         :param encoding `<'bytes'>`: The encoding of the packet data.
         """
-        # Raw Data
-        self._data = data
-        self._data_c = data
-        self._encoding = encoding
-        self._size = bytes_len(data)
-        self._pos = 0
-        # Packet Data
-        self._affected_rows = 0
-        self._insert_id = 0
-        self._server_status = -1
-        self._warning_count = 0
-        self._has_next = False
-        self._message = None
-        self._filename = None
-        self._plugin_name = None
-        self._salt = None
-        # Parse Field Descriptor
+        super().__init__(data, encoding)
         # fmt: off
+        # Parse Field Descriptor
         self._catalog = self.read_length_encoded_string()
         self._db = utils.decode_bytes(self.read_length_encoded_string(), self._encoding)
         self._table = utils.decode_bytes(self.read_length_encoded_string(), self._encoding)
@@ -577,7 +569,7 @@ class FieldDescriptorPacket(MysqlPacket):
 
     @property
     def length(self) -> int:
-        """The maximum width of the column in bytes or characters 
+        """The maximum width of the column in bytes or characters
         (depends on the columns' data type) `<'int'>`."""
         return self._length
 
@@ -604,7 +596,7 @@ class FieldDescriptorPacket(MysqlPacket):
     # Read Packet -----------------------------------------------------------------------------
     @cython.ccall
     def description(self) -> tuple[str, int, int, int, int, int, bool]:
-        """Returns a tuple of of 7-item tuples, each contains the following 
+        """Returns a tuple of of 7-item tuples, each contains the following
         information describing the columns `<'tuple[tuple]/None'>`.:
         ```python
         - "name"
