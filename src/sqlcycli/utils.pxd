@@ -42,7 +42,7 @@ cdef:
     unsigned char UNSIGNED_INT64_COLUMN  # 254
 
 # Utils: string
-cdef inline bytes encode_str(object data, char* encoding):
+cdef inline bytes encode_str(object data, const char* encoding):
     """Encode string to bytes using the 'encoding' with 'surrogateescape' error handling `<'bytes'>`.
     
     :param data `<'str'>`: String to encode.
@@ -51,7 +51,7 @@ cdef inline bytes encode_str(object data, char* encoding):
     """
     return PyUnicode_AsEncodedString(data, encoding, b"surrogateescape")
 
-cdef inline str decode_bytes(object data, char* encoding):
+cdef inline str decode_bytes(object data, const char* encoding):
     """Decode bytes to string using specified encoding with 'surrogateescape' error handling `<'str'>`.
 
     :param data `<'bytes'>`: Bytes to decode.
@@ -587,7 +587,7 @@ cdef bytes DEFAULT_CONNECT_ATTRS
 # Utils: Argument Validator
 cpdef str validate_arg_str(object arg, str arg_name, str default)
 cpdef object validate_arg_int(object arg, str arg_name, long long min_value, long long max_value)
-cpdef bytes validate_arg_bytes(object arg, str arg_name, char* encoding, str default)
+cpdef bytes validate_arg_bytes(object arg, str arg_name, const char* encoding, str default)
 cpdef Charset validate_charset(object charset, object collation, str default_charset)
 cpdef int validate_autocommit(object autocommit) except -2
 cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, int max_value)

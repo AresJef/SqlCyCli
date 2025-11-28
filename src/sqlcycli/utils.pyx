@@ -160,7 +160,7 @@ cpdef object validate_arg_int(object arg, str arg_name, long long min_value, lon
         )
     return arg
 
-cpdef bytes validate_arg_bytes(object arg, str arg_name, char* encoding, str default):
+cpdef bytes validate_arg_bytes(object arg, str arg_name, const char* encoding, str default):
     """Normalize an argument to a non-empty bytes value, with an optional default `<'bytes/None'>`.
 
     :param arg `<'str/bytes/None'>`: The argument value to validate.
