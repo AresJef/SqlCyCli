@@ -170,24 +170,31 @@ del _map_error, ER
 
 @cython.ccall
 @cython.exceptval(-1, check=False)
-def raise_mysql_exception(data: cython.pchar, size: cython.ulonglong) -> cython.bint:
+def raise_mysql_exception(
+    data: cython.p_const_char,
+    data_size: cython.Py_ssize_t,
+) -> cython.bint:
     """Raise the MySQL exception based on the given data.
 
-    :param data `<'bytes'>`: The MySQL data contains the exception information.
-    :param size `<'int'>`: The size (length) of the data.
+    :param data `<'char*/bytes'>`: The MySQL data contains the exception information.
+    :param size `<'int'>`: The length of the data.
     """
-    errno: cython.int = utils.unpack_int16(data, 1)
     # https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_err_packet.html
     # Error packet has optional sqlstate that is 5 bytes and starts with '#'.
+    if data_size < 5:
+        error: bytes = data
+        raise InternalError(0, error)
+
+    errno: cython.int = utils.unpack_int16(data, 1)
     if data[3] == 0x23:  # '#'
-        err_b: bytes = data[9:size]
+        error: bytes = data[9:data_size]
     else:
-        err_b: bytes = data[3:size]
-    err_s = err_b.decode("utf8", "replace")
-    errorclass = MYSQL_ERROR_MAP.get(errno, None)
-    if errorclass is None:
-        errorclass = InternalError if errno < 1000 else OperationalError
-    raise errorclass(errno, err_s)
+        error: bytes = data[3:data_size]
+    error_msg = error.decode("utf8", "replace")
+    error_cls = MYSQL_ERROR_MAP.get(errno, None)
+    if error_cls is None:
+        error_cls = InternalError if errno < 1000 else OperationalError
+    raise error_cls(errno, error_msg)
 
 
 # Base Exceptions ---------------------------------------------------------------------------------
@@ -203,33 +210,13 @@ class MySQLValueError(MySQLError, ValueError):
     """Raised when a value is invalid."""
 
 
-class InvalidMySQLArgsError(MySQLValueError):
-    """Raised when an argument value is invalid."""
-
-
-class MySQLFileNotFoundError(MySQLError, FileNotFoundError):
-    """Raised when file is not found."""
-
-
 # Charset Exceptions ------------------------------------------------------------------------------
 class CharsetError(MySQLError):
     """Base class for all exceptions raised by Charset."""
 
 
-class CharsetIndexError(CharsetError, MySQLIndexError):
-    """Raised when an index is invalid."""
-
-
-class CharsetValueError(CharsetError, MySQLValueError):
-    """Raised when a value is invalid."""
-
-
-class CharsetNotFoundError(CharsetValueError, ProgrammingError):
+class CharsetNotFoundError(CharsetError, ProgrammingError):
     """Raised when a charset is not found."""
-
-
-class CharsetDuplicatedError(CharsetValueError):
-    """Raised when a charset is duplicated."""
 
 
 # Transcode Exceptions ----------------------------------------------------------------------------
@@ -237,16 +224,28 @@ class TranscodeError(MySQLTypeError, MySQLValueError):
     """Base class for all exceptions raised by Transcode."""
 
 
-class EncodeError(TranscodeError, NotSupportedError, UnicodeEncodeError):
-    """Raised when an encode error occurs."""
-
-
 class EscapeError(TranscodeError, NotSupportedError):
     """Raised when an escape type is not supported."""
 
 
+class EscapeTypeError(EscapeError, MySQLTypeError):
+    """Raised when an escape type is invalid."""
+
+
+class EscapeValueError(EscapeError, MySQLValueError):
+    """Raised when an escape value is invalid."""
+
+
 class DecodeError(TranscodeError, NotSupportedError):
     """Raised when a decode type is not supported."""
+
+
+class DecodeTypeError(DecodeError, MySQLTypeError):
+    """Raised when a decode type is invalid."""
+
+
+class DecodeValueError(DecodeError, MySQLValueError):
+    """Raised when a decode value is invalid."""
 
 
 class SQLFunctionError(TranscodeError, ProgrammingError):
@@ -258,24 +257,12 @@ class ProtocolError(MySQLError):
     """Base class for all exceptions raised by Protocol."""
 
 
-class ProtocolIndexError(ProtocolError, MySQLIndexError):
-    """Raised when an index is invalid."""
-
-
-class ProtocolValueError(ProtocolError, MySQLValueError):
-    """Raised when a value is invalid."""
-
-
 class MysqlPacketError(ProtocolError):
     """Raised when a MySQL packet is invalid."""
 
 
-class MysqlPacketCursorError(MysqlPacketError, ProtocolIndexError):
+class MysqlPacketCursorError(MysqlPacketError, MySQLIndexError):
     """Raised when a cursor is invalid."""
-
-
-class MysqlPacketTypeError(MysqlPacketError, ProtocolValueError):
-    """Raised when a type is invalid."""
 
 
 class AuthenticationError(MysqlPacketError, OperationalError):
@@ -287,27 +274,19 @@ class ConnectionError(MySQLError):
     """Base class for all exceptions raised by Connection."""
 
 
-class ConnectionTypeError(ConnectionError, MySQLTypeError):
-    """Raised when a type is invalid."""
-
-
 class ConnectionValueError(ConnectionError, MySQLValueError):
     """Raised when a value is invalid."""
 
 
-class ConnectionFileNotFoundError(ConnectionError, MySQLFileNotFoundError):
+class ConnectionFileNotFoundError(ConnectionError, FileNotFoundError):
     """Raised when a file is not found."""
 
 
-class InvalidConnectionArgsError(
-    InvalidMySQLArgsError,
-    ConnectionValueError,
-    ProgrammingError,
-):
+class InvalidConnetionArgumentError(ConnectionValueError, ProgrammingError):
     """Raised when a connection value is invalid."""
 
 
-class InvalidOptionFileError(InvalidConnectionArgsError):
+class InvalidOptionFileError(InvalidConnetionArgumentError):
     """Raised when a MySQL option file is invalid."""
 
 
@@ -315,7 +294,7 @@ class OptionFileNotFoundError(InvalidOptionFileError, ConnectionFileNotFoundErro
     """Raised when a MySQL option file is not found."""
 
 
-class InvalidSSLConfigError(InvalidConnectionArgsError):
+class InvalidSSLConfigError(InvalidConnetionArgumentError):
     """Raised when an SSL configuration is invalid."""
 
 
@@ -323,7 +302,7 @@ class SSLConfigFileNotFoundError(InvalidSSLConfigError, ConnectionFileNotFoundEr
     """Raised when an SSL configuration file is not found."""
 
 
-class InvalidAuthPluginError(InvalidConnectionArgsError):
+class InvalidAuthPluginError(InvalidConnetionArgumentError):
     """Raised when an authentication plugin is invalid."""
 
 
@@ -364,15 +343,11 @@ class InvalidCursorIndexError(CursorIndexError, ProgrammingError):
     """Raised when an index is invalid."""
 
 
-class InvalidCursorArgsError(
-    InvalidMySQLArgsError,
-    CursorValueError,
-    ProgrammingError,
-):
+class InvalidCursorArgumentError(CursorValueError, ProgrammingError):
     """Raised when a cursor value is invalid."""
 
 
-class InvalidSQLArgsErorr(InvalidCursorArgsError):
+class InvalidSQLArgumentErorr(InvalidCursorArgumentError):
     """Raised when a SQL argument is invalid."""
 
 
@@ -393,7 +368,7 @@ class PoolValueError(PoolError, ConnectionValueError):
     """Raised when a value is invalid."""
 
 
-class InvalidPoolArgsError(PoolValueError, InvalidConnectionArgsError):
+class InvalidPoolArgumentError(PoolValueError, InvalidConnetionArgumentError):
     """Raised when a pool value is invalid."""
 
 
