@@ -1,4 +1,5 @@
 # Package requirements
+cytimes>=3.0.1
 numpy>=1.25.2
 orjson>=3.10.2
 pandas>=2.1.0
