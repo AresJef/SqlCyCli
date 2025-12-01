@@ -54,122 +54,6 @@ JSON_VALUE_RETURNING_TYPES: set[str] = {
 }
 
 
-# Base class ---------------------------------------------------------------------------------------------------------
-@cython.cclass
-class SQLFunction:
-    """Represents the base class for MySQL function."""
-
-    _name: str
-    _arg_count: cython.int
-    _args: tuple
-    _kwargs: str
-    _sep: str
-    _hashcode: cython.Py_ssize_t
-
-    def __init__(
-        self,
-        function_name: str,
-        arg_count: cython.int,
-        *args,
-        sep: str = ",",
-        **kwargs,
-    ):
-        """The base class for MySQL function.
-
-        :param function_name `<'str'>`: The name of the MySQL function (e.g. 'ABS', 'COUNT', 'SUM')
-        :param arg_count `<'int'>`: The number of arguments the function takes, if `-1` count the number of arguments passed.
-        :param args `<'*Any'>`: The arguments of the function.
-        :param sep `<'str'>`: The seperator between arguments. Defaults to `','`.
-        :param kwargs `<'**Any'>`: The keyword arguments of the function.
-        """
-        self._name = function_name
-        if arg_count == -1:
-            self._arg_count = tuple_len(args)
-        else:
-            self._arg_count = arg_count
-        self._args = args
-        self._kwargs = self._validate_kwargs(kwargs)
-        self._sep = sep
-        self._hashcode = -1
-
-    @property
-    def name(self) -> str:
-        """The name of the MySQL function."""
-        return self._name
-
-    @property
-    def args(self) -> tuple[object]:
-        """The arguments of the MySQL function."""
-        return self._args
-
-    @cython.cfunc
-    @cython.inline(True)
-    def _validate_kwargs(self, kwargs: dict) -> str:
-        """(internal) Compose the keyword arguments of the function `<'str/None'>."""
-        if dict_len(kwargs) == 0:
-            return None
-
-        res = []
-        for k, v in kwargs.items():
-            if v is IGNORED:
-                continue
-            if not isinstance(v, str):
-                raise errors.SQLFunctionError(
-                    "The value for argument '%s' must be <'str'> type, "
-                    "instead got %s '%r'." % (k, type(v), v)
-                )
-            res.append("%s %s" % (k, v))
-        return " ".join(res) if res else None
-
-    @cython.ccall
-    def syntax(self) -> str:
-        """Generate the function syntax with the correct 
-        placeholders for the arguments (args) `<'str'>`.
-        """
-        if self._arg_count == 0:
-            if self._kwargs is None:
-                return self._name + "()"
-            return self._name + "(%s)" % self._kwargs
-        elif self._arg_count == 1:
-            if self._kwargs is None:
-                return self._name + "(%s)"
-            return self._name + "(%s %s)" % ("%s", self._kwargs)
-        else:
-            args: str = self._sep.join(["%s" for _ in range(self._arg_count)])
-            if self._kwargs is None:
-                return "%s(%s)" % (self._name, args)
-            return "%s(%s %s)" % (self._name, args, self._kwargs)
-
-    def __repr__(self) -> str:
-        if self._kwargs is None:
-            return "<SQLFunction: %s(%s)>" % (
-                self._name,
-                self._sep.join(map(repr, self._args)),
-            )
-        else:
-            return "<SQLFunction: %s(%s %s)>" % (
-                self._name,
-                self._sep.join(map(repr, self._args)),
-                self._kwargs,
-            )
-
-    def __str__(self) -> str:
-        return self.syntax() % tuple([str(i) for i in self._args])
-
-    def __hash__(self) -> int:
-        if self._hashcode == -1:
-            self._hashcode = hash(
-                (
-                    self.__class__.__name__,
-                    self._name,
-                    self._args,
-                    self._kwargs,
-                    self._sep,
-                )
-            )
-        return self._hashcode
-
-
 # Custom class -------------------------------------------------------------------------------------------------------
 @cython.cclass
 class Sentinel:
@@ -252,16 +136,120 @@ class RawText:
         return self._hashcode
 
 
+# Base class ---------------------------------------------------------------------------------------------------------
 @cython.cclass
-class ObjStr:
-    """For any subclass of <'ObjStr'>, the 'escape()' function will
-    call its '__str__()' method and use the result as the escaped value.
+class SQLFunction:
+    """Represents the base class for MySQL function."""
 
-    The '__str__()' method must be implemented in the subclass.
-    """
+    _name: str
+    _arg_count: cython.int
+    _args: tuple
+    _kwargs: str
+    _sep: str
+    _hashcode: cython.Py_ssize_t
+
+    def __init__(
+        self,
+        function_name: str,
+        arg_count: cython.int,
+        *args,
+        sep: str = ",",
+        **kwargs,
+    ):
+        """The base class for MySQL function.
+
+        :param function_name `<'str'>`: The name of the MySQL function (e.g. 'ABS', 'COUNT', 'SUM')
+        :param arg_count `<'int'>`: The number of arguments the function takes, if `-1` count the number of arguments passed.
+        :param args `<'*Any'>`: The arguments of the function.
+        :param sep `<'str'>`: The seperator between arguments. Defaults to `','`.
+        :param kwargs `<'**Any'>`: The keyword arguments of the function.
+        """
+        self._name = function_name
+        if arg_count == -1:
+            self._arg_count = tuple_len(args)
+        else:
+            self._arg_count = arg_count
+        self._args = args
+        self._kwargs = self._validate_kwargs(kwargs)
+        self._sep = sep
+        self._hashcode = -1
+
+    @property
+    def name(self) -> str:
+        """The name of the MySQL function."""
+        return self._name
+
+    @property
+    def args(self) -> tuple[object]:
+        """The arguments of the MySQL function."""
+        return self._args
+
+    @cython.cfunc
+    @cython.inline(True)
+    def _validate_kwargs(self, kwargs: dict) -> str:
+        """(internal) Compose the keyword arguments of the function `<'str/None'>."""
+        if dict_len(kwargs) == 0:
+            return None
+
+        res = []
+        for k, v in kwargs.items():
+            if v is IGNORED:
+                continue
+            if not isinstance(v, str):
+                raise errors.SQLFunctionError(
+                    "The value for argument '%s' must be <'str'> type, "
+                    "instead got %s '%r'." % (k, type(v), v)
+                )
+            res.append("%s %s" % (k, v))
+        return " ".join(res) if res else None
+
+    @cython.ccall
+    def syntax(self) -> str:
+        """Generate the function syntax with the correct
+        placeholders for the arguments (args) `<'str'>`.
+        """
+        if self._arg_count == 0:
+            if self._kwargs is None:
+                return self._name + "()"
+            return self._name + "(%s)" % self._kwargs
+        elif self._arg_count == 1:
+            if self._kwargs is None:
+                return self._name + "(%s)"
+            return self._name + "(%s %s)" % ("%s", self._kwargs)
+        else:
+            args: str = self._sep.join(["%s" for _ in range(self._arg_count)])
+            if self._kwargs is None:
+                return "%s(%s)" % (self._name, args)
+            return "%s(%s %s)" % (self._name, args, self._kwargs)
+
+    def __repr__(self) -> str:
+        if self._kwargs is None:
+            return "<SQLFunction: %s(%s)>" % (
+                self._name,
+                self._sep.join(map(repr, self._args)),
+            )
+        else:
+            return "<SQLFunction: %s(%s %s)>" % (
+                self._name,
+                self._sep.join(map(repr, self._args)),
+                self._kwargs,
+            )
 
     def __str__(self) -> str:
-        raise NotImplementedError("<'%s'> must implement its '__str__()' method")
+        return self.syntax() % tuple([str(i) for i in self._args])
+
+    def __hash__(self) -> int:
+        if self._hashcode == -1:
+            self._hashcode = hash(
+                (
+                    self.__class__.__name__,
+                    self._name,
+                    self._args,
+                    self._kwargs,
+                    self._sep,
+                )
+            )
+        return self._hashcode
 
 
 # Utils --------------------------------------------------------------------------------------------------------------

@@ -1,5 +1,17 @@
 from typing import Any
 
+# Custom class
+class Sentinel:
+    def __repr__(self): ...
+
+IGNORED: Sentinel
+
+class RawText:
+    def __init__(self, value: str): ...
+    @property
+    def value(self) -> str: ...
+    def __repr__(self) -> str: ...
+
 # Base class
 class SQLFunction:
     def __init__(
@@ -16,21 +28,6 @@ class SQLFunction:
     def args(self) -> tuple[object]: ...
     def syntax(self) -> str: ...
     def __repr__(self) -> str: ...
-
-# Custom class
-class Sentinel:
-    def __repr__(self): ...
-
-IGNORED: Sentinel
-
-class RawText:
-    def __init__(self, value: str): ...
-    @property
-    def value(self) -> str: ...
-    def __repr__(self) -> str: ...
-
-class ObjStr:
-    def __str__(self) -> str: ...
 
 # Functions: Custom
 class RANDINT(SQLFunction):
