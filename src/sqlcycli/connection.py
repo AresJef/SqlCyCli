@@ -810,7 +810,7 @@ class Cursor:
         else:
             items = escape(args, False, True)
             if type(items) is not tuple:
-                raise errors.InvalidCursorArgsError(
+                raise errors.InvalidCursorArgumentError(
                     "Invalid 'args' for 'callproc()' method, "
                     "expects <'tuple/list'> instead of %s." % type(args)
                 )
@@ -1239,7 +1239,9 @@ class Cursor:
                     )
                 idx = value
             else:
-                raise errors.InvalidCursorArgsError("Inavlid scroll mode '%s'." % mode)
+                raise errors.InvalidCursorArgumentError(
+                    "Inavlid scroll mode '%s'." % mode
+                )
 
             if idx >= row_size:
                 raise errors.InvalidCursorIndexError(
@@ -1263,7 +1265,7 @@ class Cursor:
                 )
             value -= self._row_idx
         else:
-            raise errors.InvalidCursorArgsError("Inavlid scroll mode '%s'." % mode)
+            raise errors.InvalidCursorArgumentError("Inavlid scroll mode '%s'." % mode)
         for _ in range(value):
             if self._next_row_unbuffered() is None:
                 break
@@ -2350,7 +2352,7 @@ class BaseConnection:
                 return DictCursor
             if cursor is DataFrame:
                 return DfCursor
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid 'cursor' argument: %r.\n"
             "Expects type (subclass) of %r." % (cursor, Cursor)
         )
@@ -3321,7 +3323,7 @@ class BaseConnection:
 
         # . validate username
         if self._user is None:
-            raise errors.InvalidConnectionArgsError(
+            raise errors.InvalidConnetionArgumentError(
                 "<'%s'>\nUsername 'user' is not specified." % self.__class__.__name__
             )
 
