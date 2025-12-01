@@ -70,7 +70,7 @@ cpdef str format_sql(str sql, object args):
     try:
         return sql % args
     except Exception as err:
-        raise errors.InvalidSQLArgsErorr(
+        raise errors.InvalidSQLArgumentErorr(
             "Failed to format SQL:\n%s\n"
             "With %s arguments:\n%r\n"
             "Error: %s" % (sql, type(args), args, err)
@@ -87,7 +87,7 @@ cpdef bytes gen_connect_attrs(list attrs):
     cdef bytes attr_bytes
     for attr in attrs:
         if not isinstance(attr, str):
-            raise errors.InvalidConnectionArgsError(
+            raise errors.InvalidConnetionArgumentError(
                 "Connection attribute must be <'str'>, "
                 "instead got %r %s." % (attr, type(attr))
             )
@@ -108,19 +108,19 @@ cpdef str validate_arg_str(object arg, str arg_name, str default):
     :param arg_name `<'str'>`: The argument name (for error messages).
     :param default `<'str/None'>`: The fallback value returned when `arg` is None or an empty string.
     :returns `<'str'>`: The validated string or the default value.
-    :raises `<'InvalidConnectionArgsError'>`: If `arg` is neither None nor a string.
+    :raises `<'InvalidConnetionArgumentError'>`: If `arg` is neither None nor a string.
 
     ## Behavior
     - If `arg` is None, return `default`.
     - If `arg` is a string:
         * return it if non-empty,
         * otherwise return `default`.
-    - Any other type raises `InvalidConnectionArgsError`.
+    - Any other type raises `InvalidConnetionArgumentError`.
     """
     if arg is None:
         return default
     if not isinstance(arg, str):
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid '%s' argument %r %s.\n"
             "Expects a non-empty <'str'> or None." 
             % (arg_name, arg, type(arg))
@@ -135,25 +135,25 @@ cpdef object validate_arg_int(object arg, str arg_name, long long min_value, lon
     :param min_value `<'int'>`: The minimum allowed value (inclusive).
     :param max_value `<'int'>`: The maximum allowed value (inclusive).
     :returns `<'int/None'>`: The valid integer within the range, or None.
-    :raises `<'InvalidConnectionArgsError'>`: If `arg` is neither None nor an int,
+    :raises `<'InvalidConnetionArgumentError'>`: If `arg` is neither None nor an int,
         or if it falls outside the `[min_value, max_value]` range.
 
     ## Behavior
     - If `arg` is None, return None.
     - If `arg` is an int and `min_value <= arg <= max_value`, return `arg` as-is.
-    - Otherwise, raise `InvalidConnectionArgsError`.
+    - Otherwise, raise `InvalidConnetionArgumentError`.
     """
     if arg is None:
         return None
     if not isinstance(arg, int):
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid '%s' argument %r %s.\n"
             "Expects an <'int'> or None." 
             % (arg_name, arg, type(arg))
         )
     cdef long long value = int(arg)
     if not min_value <= value <= max_value:
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid '%s' argument %d.\n"
             "Expects an integer between %d and %d." 
             % (arg_name, value, min_value, max_value)
@@ -168,7 +168,7 @@ cpdef bytes validate_arg_bytes(object arg, str arg_name, const char* encoding, s
     :param encoding `<'char*/bytes'>`: The character encoding used when converting strings to bytes.
     :param default `<'str/None'>`: Optional default value used when `arg` is None or empty.
     :returns `<'bytes/None'>`: A non-empty bytes object, or None if no value or default is provided.
-    :raises `<'InvalidConnectionArgsError'>`: If `arg` is not None/str/bytes, 
+    :raises `<'InvalidConnetionArgumentError'>`: If `arg` is not None/str/bytes, 
         or if its type is str/bytes but invalid under the above rules.
 
     ## Behavior
@@ -181,7 +181,7 @@ cpdef bytes validate_arg_bytes(object arg, str arg_name, const char* encoding, s
     - If `arg` is bytes:
         * If non-empty, return `arg` as-is (no copy).
         * If empty, behave as if `arg` were None (use `default` or return None).
-    - For any other type, raise `InvalidConnectionArgsError`.
+    - For any other type, raise `InvalidConnetionArgumentError`.
     """
     if arg is None:
         if default is not None:
@@ -199,7 +199,7 @@ cpdef bytes validate_arg_bytes(object arg, str arg_name, const char* encoding, s
         if default is not None:
             return encode_str(default, encoding)
         return None
-    raise errors.InvalidConnectionArgsError(
+    raise errors.InvalidConnetionArgumentError(
         "Invalid '%s' argument %r %s.\n"
         "Expects a non-empty <'str'>, <'bytes'> or None." 
         % (arg_name, arg, type(arg))
@@ -212,7 +212,7 @@ cpdef Charset validate_charset(object charset, object collation, str default_cha
     :param collation `<'str/None'>`: Collation name
     :param default_charset `<'str/None'>`: Fallback charset name used when `charset` is None/empty.
     :returns `<'Charset'>`: The resolved charset object.
-    :raises `<'InvalidConnectionArgsError'>`: If `charset` or `collation` has 
+    :raises `<'InvalidConnetionArgumentError'>`: If `charset` or `collation` has 
         an invalid type or is an empty string.
     :raises `<'CharsetNotFoundError'>` If the resolved charset or collation does not exist.
 
@@ -282,7 +282,7 @@ cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, in
         try:
             value = int(max_allowed_packet)
         except Exception as err:
-            raise errors.InvalidConnectionArgsError(
+            raise errors.InvalidConnetionArgumentError(
                 "Invalid 'max_allowed_packet' argument %r %s.\n"
                 "Expects <'str'>, <'int'> or None."
                 % (max_allowed_packet, type(max_allowed_packet))
@@ -319,7 +319,7 @@ cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, in
                 raise ValueError("not enough characters.")
             value = int(str_substr(max_allowed_packet, 0, size))
         except Exception as err:
-            raise errors.InvalidConnectionArgsError(
+            raise errors.InvalidConnetionArgumentError(
                 "Invalid 'max_allowed_packet' argument %r %s.\nError: %s"
                 % (max_allowed_packet, type(max_allowed_packet), err)
             ) from err
@@ -327,7 +327,7 @@ cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, in
 
     # Invalid type
     else:
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid 'max_allowed_packet' argument %r %s.\n"
             "Expects <'str'>, <'int'> or None."
             % (max_allowed_packet, type(max_allowed_packet))
@@ -335,7 +335,7 @@ cpdef int validate_max_allowed_packet(object max_allowed_packet, int default, in
 
     # Validate range
     if not 1 <= value <= max_value:
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid 'max_allowed_packet' argument %d.\n"
             "Value must be between 1 and %d bytes."
             % (value, max_value)
@@ -347,12 +347,12 @@ cpdef str validate_sql_mode(object sql_mode):
 
     :param sql_mode `<'str/None'>`: The sql_mode value.
     :returns `<'str/None'>`: The escaped sql_mode string, or None.
-    :raises `<'InvalidConnectionArgsError'>`: If `sql_mode` is neither None nor a string.
+    :raises `<'InvalidConnetionArgumentError'>`: If `sql_mode` is neither None nor a string.
     """
     if sql_mode is None:
         return None
     if not isinstance(sql_mode, str):
-        raise errors.InvalidConnectionArgsError(
+        raise errors.InvalidConnetionArgumentError(
             "Invalid 'sql_mode' argument %r %s.\n"
             "Expects a <'str'> or None." 
             % (sql_mode, type(sql_mode))
@@ -364,7 +364,7 @@ cpdef object validate_ssl(object ssl):
 
     :param ssl `<'SSLContext/SSL/None'>`: The ssl argument.
     :returns `<'SSLContext/None'>`: The SSLContext object or None.
-    :raises `<'InvalidConnectionArgsError'>`: If `ssl` is neither None, SSL, nor SSLContext.
+    :raises `<'InvalidConnetionArgumentError'>`: If `ssl` is neither None, SSL, nor SSLContext.
     """
     if ssl is None:
         return None
@@ -372,7 +372,7 @@ cpdef object validate_ssl(object ssl):
         return ssl.context if ssl else None
     if is_ssl_ctx(ssl):
         return ssl
-    raise errors.InvalidConnectionArgsError(
+    raise errors.InvalidConnetionArgumentError(
         "Invalid 'ssl' argument %r %s.\n"
         "Expects a <'SSLContext'>, <'SSL'> or None." 
         % (ssl, type(ssl))
@@ -633,7 +633,7 @@ cpdef bint _test_validate_max_allowed_packet() except -1:
     for i in (0, max_value + 1):
         try:
             validate_max_allowed_packet(i, default, max_value)
-        except errors.InvalidConnectionArgsError as err:
+        except errors.InvalidConnetionArgumentError as err:
             pass
         else:
             raise AssertionError("validate_max_allowed_packet ValueError is not raised")
@@ -662,7 +662,7 @@ cpdef bint _test_validate_max_allowed_packet() except -1:
     ):
         try:
             validate_max_allowed_packet(val, default, max_value)
-        except errors.InvalidConnectionArgsError as err:
+        except errors.InvalidConnetionArgumentError as err:
             pass
         else:
             raise AssertionError("validate_max_allowed_packet ValueError is not raised")
