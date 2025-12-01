@@ -474,7 +474,7 @@ class TestPool(TestCase):
         test = "MIN/MAX SIZE AND RECYCLE"
         self.log_start(test)
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(min_size=-1) as _:
                 pass
 
@@ -482,7 +482,7 @@ class TestPool(TestCase):
             async with await self.get_pool(min_size=1234567890123) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(min_size=0, max_size=-1) as _:
                 pass
 
@@ -490,23 +490,23 @@ class TestPool(TestCase):
             async with await self.get_pool(min_size=0, max_size=1234567890123) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(min_size=0, max_size=0) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(min_size=10, max_size=1) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(recycle=-12345678901234567890) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(errors.InvalidPoolArgumentError):
             async with await self.get_pool(recycle=12345678901234567890) as _:
                 pass
 
-        with self.assertRaises(errors.InvalidPoolArgsError):
+        with self.assertRaises(TypeError):
             async with await self.get_pool(recycle="3.6345") as _:
                 pass
 
