@@ -1303,7 +1303,7 @@ class TestEscape(TestCase):
         self.log_ended(test)
 
     def test_escape_custom(self) -> None:
-        from sqlcycli.transcode import BIT, JSON
+        from sqlcycli.transcode import BIT, JSON, ObjStr
 
         test = "ESCAPE CUSTOM TYPES"
         self.log_start(test)
@@ -1348,6 +1348,13 @@ class TestEscape(TestCase):
         # JSON: invalid
         with self.assertRaises(errors.EscapeError):
             escape(JSON(pd.Series([1, 2, 3])))
+
+        # ObjStr
+        class CustomObj(ObjStr):
+            def __str__(self):
+                return "apple"
+
+        self.assertEqualEscape("apple", CustomObj())
 
         self.log_ended(test)
 

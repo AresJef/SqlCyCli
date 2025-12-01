@@ -54,18 +54,6 @@ class TestCustomClass(TestCase):
 
         self.log_ended("RawText")
 
-    def test_objstr(self) -> None:
-        self.log_start("ObjStr")
-
-        class CustomClass(sqlfunc.ObjStr):
-            def __str__(self) -> str:
-                return "apple"
-
-        arg = CustomClass()
-        self.assertEqual(escape(arg), "apple")
-
-        self.log_ended("ObjStr")
-
 
 class TestSQLInterval(TestCase):
     name: str = "SQLInterval"
