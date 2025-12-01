@@ -42,21 +42,21 @@ The following result comes from [benchmark](./src/benchmark.py):
 ```
 # Unit: second | Lower is better
 name        type    rows    insert-per-row  insert-bulk select-per-row  select-all
-SQLCyCli    sync    50000   2.428453        0.367404    2.526141        0.078057
-PyMySQL     sync    50000   2.821481        0.480322    4.784844        0.335978
-SQLCyCli    async   50000   3.757844        0.340909    5.017284        0.157078
-aiomysql    async   50000   3.845818        0.419444    5.764339        0.333526
-asyncmy     async   50000   4.015180        0.484794    6.144809        0.337285
+SQLCyCli    sync    50000   2.314604        0.352408    2.303785        0.045072
+PyMySQL     sync    50000   2.564615        0.453932    5.005772        0.321882
+SQLCyCli    async   50000   3.470987        0.349488    4.227539        0.112310
+aiomysql    async   50000   3.655537        0.435786    5.882189        0.337962
+asyncmy     async   50000   3.694391        0.414223    5.372794        0.278912
 ```
 
 ```
 # Unit: second | Lower is better
 name        type    rows    update-per-row  update-all  delete-per-row  delete-all
-SQLCyCli    sync    50000   2.597837        0.327441    2.251010        0.131872
-PyMySQL     sync    50000   3.044907        0.368951    2.789961        0.158141
-SQLCyCli    async   50000   4.226546        0.369085    3.994125        0.139679
-aiomysql    async   50000   3.792293        0.356109    3.589203        0.134762
-asyncmy     async   50000   4.160017        0.362896    3.928555        0.145456
+SQLCyCli    sync    50000   2.438695        0.463743    2.239835        0.129764
+PyMySQL     sync    50000   2.728665        0.352855    2.415529        0.128943
+SQLCyCli    async   50000   3.591613        0.536130    3.452353        0.134043
+aiomysql    async   50000   3.678571        0.352699    3.567383        0.134994
+asyncmy     async   50000   3.852939        0.321264    3.615992        0.134843
 ```
 
 ## Usage
