@@ -2,7 +2,7 @@ from sqlcycli import constants, errors, sqlfunc, sqlintvl
 from sqlcycli._ssl import SSL
 from sqlcycli._auth import AuthPlugin
 from sqlcycli._optionfile import OptionFile
-from sqlcycli.transcode import escape, BIT, JSON
+from sqlcycli.transcode import escape, ObjStr, BIT, JSON
 from sqlcycli.charset import Charset, Charsets, all_charsets
 from sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket
 from sqlcycli.connection import (
@@ -47,6 +47,7 @@ __all__ = [
     "PoolConnection",
     "PoolSyncConnection",
     # Type
+    "ObjStr",
     "BIT",
     "JSON",
     # Function
