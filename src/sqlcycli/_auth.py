@@ -7,9 +7,9 @@ import cython
 from cython.cimports.cpython.dict import PyDict_Size as dict_len  # type: ignore
 from cython.cimports.cpython.dict import PyDict_SetItem as dict_setitem  # type: ignore
 from cython.cimports.cpython.dict import PyDict_Contains as dict_contains  # type: ignore
+from cython.cimports.cpython.bytes import PyBytes_FromStringAndSize  # type: ignore
 from cython.cimports.cpython.bytes import PyBytes_Size as bytes_len  # type: ignore
 from cython.cimports.cpython.bytes import PyBytes_AsString as bytes_to_chars  # type: ignore
-from cython.cimports.cpython.bytes import PyBytes_FromStringAndSize as bytes_fr_chars_wlen  # type: ignore
 from cython.cimports.cpython.bytearray import PyByteArray_GET_SIZE as bytearray_len  # type: ignore
 from cython.cimports.cpython.bytearray import PyByteArray_AS_STRING as bytearray_to_chars  # type: ignore
 from cython.cimports.sqlcycli import utils  # type: ignore
@@ -331,13 +331,13 @@ def scramble_native_password(password: bytes, salt: bytes) -> bytes:
     s.update(stage2)
     res: bytes = s.digest()
 
-    msg1: cython.pchar = bytes_to_chars(res)
-    msg2: cython.pchar = bytes_to_chars(stage1)
+    msg1: cython.p_char = bytes_to_chars(res)
+    msg2: cython.p_char = bytes_to_chars(stage1)
     length: cython.Py_ssize_t = bytes_len(res)
     i: cython.Py_ssize_t
     for i in range(length):
         msg1[i] ^= msg2[i]
-    return bytes_fr_chars_wlen(msg1, length)
+    return PyBytes_FromStringAndSize(msg1, length)
 
 
 @cython.ccall
@@ -362,13 +362,13 @@ def scramble_caching_sha2(password: bytes, salt: bytes) -> bytes:
     p2: bytes = _hashlib_sha256(p1).digest()
     p3: bytes = _hashlib_sha256(p2 + salt).digest()
 
-    msg1: cython.pchar = bytes_to_chars(p1)
-    msg2: cython.pchar = bytes_to_chars(p3)
+    msg1: cython.p_char = bytes_to_chars(p1)
+    msg2: cython.p_char = bytes_to_chars(p3)
     length: cython.Py_ssize_t = bytes_len(p3)
     i: cython.Py_ssize_t
     for i in range(length):
         msg1[i] ^= msg2[i]
-    return bytes_fr_chars_wlen(msg1, length)
+    return PyBytes_FromStringAndSize(msg1, length)
 
 
 @cython.ccall
@@ -401,14 +401,14 @@ def sha2_rsa_encrypt(password: bytes, salt: bytes, public_key: bytes) -> bytes:
     # See https://github.com/mysql/mysql-server/blob/7d10c82196c8e45554f27c00681474a9fb86d137/sql/auth/sha2_password.cc#L939-L945
     pswd: bytearray = bytearray(password) + b"\0"
     pswd_len: cython.Py_ssize_t = bytearray_len(pswd)
-    msg1: cython.pchar = bytearray_to_chars(pswd)
+    msg1: cython.p_char = bytearray_to_chars(pswd)
     salt: bytes = salt[0:SCRAMBLE_LENGTH]
-    msg2: cython.pchar = bytes_to_chars(salt)
+    msg2: cython.p_char = bytes_to_chars(salt)
     salt_len: cython.Py_ssize_t = bytes_len(salt)
     i: cython.Py_ssize_t
     for i in range(pswd_len):
         msg1[i] ^= msg2[i % salt_len]
-    message: bytes = bytes_fr_chars_wlen(msg1, pswd_len)
+    message: bytes = PyBytes_FromStringAndSize(msg1, pswd_len)
 
     # rsa encryption
     rsa_key = serialization.load_pem_public_key(public_key, _default_backend())
@@ -451,7 +451,7 @@ def ed25519_password(password: bytes, scramble: bytes) -> bytes:
 
     # s = prune(first_half(h))
     s32: bytearray = bytearray(h[0:32])
-    ba: cython.pchar = bytearray_to_chars(s32)
+    ba: cython.p_char = bytearray_to_chars(s32)
     ba0: bytes = utils.pack_uint8(ba[0] & 248)
     ba31: bytes = utils.pack_uint8((ba[31] & 127) | 64)
     ba_m: bytes = ba[1:31]
