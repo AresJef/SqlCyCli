@@ -70,7 +70,7 @@ def validate_sync_cursor(cursor: object) -> type:
             return sync_conn.SSDictCursor
         if cursor is async_conn.SSDfCursor:
             return sync_conn.SSDfCursor
-    raise errors.InvalidConnectionArgsError(
+    raise errors.InvalidConnetionArgumentError(
         "Invalid 'cursor' argument: %r.\n"
         "Expects type (subclass) of %r." % (cursor, sync_conn.Cursor)
     )
@@ -102,7 +102,7 @@ def validate_async_cursor(cursor: object) -> type:
             return async_conn.SSDictCursor
         if cursor is sync_conn.SSDfCursor:
             return async_conn.SSDfCursor
-    raise errors.InvalidConnectionArgsError(
+    raise errors.InvalidConnetionArgumentError(
         "Invalid 'cursor' argument: %r.\n"
         "Expects type (subclass) of %r." % (cursor, async_conn.Cursor)
     )
@@ -816,12 +816,12 @@ class Pool:
         self._free = 0
         # . internal
         if min_size < 0:
-            raise errors.InvalidPoolArgsError(
+            raise errors.InvalidPoolArgumentError(
                 "Invalid minimum pool size '%d', must be a postive integer." % min_size
             )
         self._min_size = min_size
         if max_size < max(1, min_size):
-            raise errors.InvalidPoolArgsError(
+            raise errors.InvalidPoolArgumentError(
                 "Invalid maximum pool size '%d', must be greater than %d."
                 % (max_size, max(1, min_size))
             )
@@ -832,7 +832,7 @@ class Pool:
             try:
                 self._recycle = int(recycle)
             except Exception as err:
-                raise errors.InvalidPoolArgsError(
+                raise errors.InvalidPoolArgumentError(
                     "Invalid recycle time: %r." % recycle
                 ) from err
             if self._recycle < -1:
@@ -1078,7 +1078,7 @@ class Pool:
         :param size `<'int'>`: The new minimum pool size.
         """
         if size > self._max_size:
-            raise errors.InvalidPoolArgsError(
+            raise errors.InvalidPoolArgumentError(
                 "Minimum pool size '%d' must be less than maximum pool size '%d'."
                 % (size, self._max_size)
             )
@@ -1101,7 +1101,7 @@ class Pool:
             try:
                 self._recycle = int(recycle)
             except Exception as err:
-                raise errors.InvalidPoolArgsError(
+                raise errors.InvalidPoolArgumentError(
                     "Invalid recycle time: %r." % recycle
                 ) from err
             if self._recycle < -1:
