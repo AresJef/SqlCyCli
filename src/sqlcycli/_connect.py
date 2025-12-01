@@ -98,7 +98,6 @@ class ConnectionManager:
             self._conn_async = None
 
 
-@cython.ccall
 def connect(
     host: str | None = "localhost",
     port: int | Any = 3306,
@@ -297,7 +296,6 @@ class PoolManager:
             self._pool = None
 
 
-@cython.ccall
 def create_pool(
     host: str | None = "localhost",
     port: int | Any = 3306,
