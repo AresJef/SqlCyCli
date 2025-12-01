@@ -62,9 +62,8 @@ if platform.system() == "Windows":
         extension("protocol.py", True),
         extension("sqlfunc.py", True),
         extension("sqlintvl.py", True),
-        extension("transcode.py", True),
-        extension("typeref.py", False),
-        extension("utils.py", True),
+        extension("transcode.pyx", True),
+        extension("utils.pyx", True),
         # fmt: on
     ]
 else:
@@ -86,9 +85,8 @@ else:
         extension("protocol.py", True, "-Wno-unreachable-code"),
         extension("sqlfunc.py", True, "-Wno-unreachable-code"),
         extension("sqlintvl.py", True, "-Wno-unreachable-code"),
-        extension("transcode.py", True, "-Wno-unreachable-code"),
-        extension("typeref.py", False),
-        extension("utils.py", True, "-Wno-unreachable-code"),
+        extension("transcode.pyx", True, "-Wno-unreachable-code"),
+        extension("utils.pyx", True, "-Wno-unreachable-code"),
         # fmt: on
     ]
 
