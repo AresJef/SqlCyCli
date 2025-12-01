@@ -21,7 +21,7 @@ from cython.cimports.sqlcycli._optionfile import OptionFile  # type: ignore
 from cython.cimports.sqlcycli.constants import _CLIENT, _COMMAND, _SERVER_STATUS  # type: ignore
 from cython.cimports.sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket  # type: ignore
 from cython.cimports.sqlcycli.transcode import escape, decode  # type: ignore
-from cython.cimports.sqlcycli import _auth, typeref, utils  # type: ignore
+from cython.cimports.sqlcycli import _auth, utils  # type: ignore
 
 # Python imports
 from io import BufferedReader
@@ -36,7 +36,7 @@ from sqlcycli._optionfile import OptionFile
 from sqlcycli.transcode import escape, decode
 from sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket
 from sqlcycli.constants import _CLIENT, _COMMAND, _SERVER_STATUS, CR, ER
-from sqlcycli import typeref, utils, errors
+from sqlcycli import utils, errors
 
 __all__ = [
     "MysqlResult",
@@ -303,7 +303,6 @@ class MysqlResult:
         """
         # Settings
         conn: BaseConnection = self._conn
-        encoding_c: cython.pchar = conn._encoding_c
         use_decimal: cython.bint = conn._use_decimal
         decode_bit: cython.bint = conn._decode_bit
         decode_json: cython.bint = conn._decode_json
@@ -320,7 +319,7 @@ class MysqlResult:
                 data = decode(
                     value,
                     field._type_code,
-                    encoding_c,
+                    conn._encoding_ptr,
                     field._is_binary,
                     use_decimal,
                     decode_bit,
@@ -371,12 +370,13 @@ class MysqlResult:
             except errors.OperationalTimeoutError:
                 self._unbuffered_active = False
                 self._conn = None
-                return True
+                return True  # exit
             # Release connection before raising the error
             except:  # noqa:
                 self._unbuffered_active = False
                 self._conn = None
-                raise
+                raise  # break
+
             # Exist when receieved EOFPacket
             if pkt.read_eof_packet():
                 self._read_eof_packet(pkt)
@@ -399,7 +399,6 @@ class Cursor:
 
     _unbuffered: cython.bint  # Determines whether is SSCursor
     _conn: BaseConnection
-    _encoding_c: cython.pchar
     _executed_sql: bytes
     _arraysize: cython.ulonglong
     _result: MysqlResult
@@ -437,7 +436,6 @@ class Cursor:
         """
         self._unbuffered = unbuffered  # Determines whether is SSCursor
         self._conn = conn
-        self._encoding_c = conn._encoding_c
         self._executed_sql = None
         self._arraysize = 1
         self._columns = None
@@ -452,9 +450,9 @@ class Cursor:
         Returns `None` if the query does not return rows,
         or no SQL has been executed yet.
         """
-        if self._executed_sql is None:
+        if self._executed_sql is None or self._conn is None:
             return None
-        return utils.decode_bytes(self._executed_sql, self._encoding_c)
+        return utils.decode_bytes(self._executed_sql, self._conn._encoding_ptr)
 
     @property
     def field_count(self) -> int:
@@ -886,7 +884,8 @@ class Cursor:
     @cython.inline(True)
     def _query_str(self, sql: str) -> cython.ulonglong:
         """(internal) Execute a SQL provided as a text string `<'int'>`."""
-        return self._query_bytes(utils.encode_str(sql, self._encoding_c))
+        self._verify_connected()
+        return self._query_bytes(utils.encode_str(sql, self._conn._encoding_ptr))
 
     @cython.cfunc
     @cython.inline(True)
@@ -981,7 +980,7 @@ class Cursor:
         if cols is None:
             return None  # eixt: no columns
         # Generate
-        return typeref.DATAFRAME([row], columns=cols)
+        return DataFrame([row], columns=cols)
 
     # . fetchmany
     def fetchmany(self, rows: int = 1) -> tuple[tuple]:
@@ -1081,12 +1080,12 @@ class Cursor:
         cols = self.columns()
         if tuple_len(res) == 0:  # no more rows
             if cols is None:
-                return typeref.DATAFRAME()
-            return typeref.DATAFRAME(columns=cols)
+                return DataFrame()
+            return DataFrame(columns=cols)
         if cols is None:  # no columns
-            return typeref.DATAFRAME()
+            return DataFrame()
         # Generate
-        return typeref.DATAFRAME(res, columns=cols)
+        return DataFrame(res, columns=cols)
 
     # . fetchall
     def fetchall(self) -> tuple[tuple]:
@@ -1177,12 +1176,12 @@ class Cursor:
         cols = self.columns()
         if tuple_len(res) == 0:  # no more rows
             if cols is None:
-                return typeref.DATAFRAME()
-            return typeref.DATAFRAME(columns=cols)
+                return DataFrame()
+            return DataFrame(columns=cols)
         if cols is None:  # no columns
-            return typeref.DATAFRAME()
+            return DataFrame()
         # Generate
-        return typeref.DATAFRAME(res, columns=cols)
+        return DataFrame(res, columns=cols)
 
     # . fetch: converter
     @cython.cfunc
@@ -1809,7 +1808,7 @@ class BaseConnection:
     _collation: str
     _charset_id: cython.uint
     _encoding: bytes
-    _encoding_c: cython.pchar
+    _encoding_ptr: cython.p_const_char
     _charset_changed: cython.bint
     # Timeouts
     _connect_timeout: object  # uint
@@ -1986,7 +1985,7 @@ class BaseConnection:
         self._charset = charset._name
         self._collation = charset._collation
         self._encoding = charset._encoding
-        self._encoding_c = charset._encoding_c
+        self._encoding_ptr = charset._encoding_ptr
         return True
 
     @cython.cfunc
@@ -2007,7 +2006,7 @@ class BaseConnection:
     @cython.cfunc
     @cython.inline(True)
     @cython.exceptval(-1, check=False)
-    def _setup_connect_attrs(self, program_name: str | None) -> cython.bint:
+    def _setup_connect_attrs(self, program_name: object) -> cython.bint:
         """(internal) Setup the `connect_attrs` of the connection'."""
         if program_name is None:
             attrs: bytes = utils.DEFAULT_CONNECT_ATTRS + utils.gen_connect_attrs(
@@ -2074,7 +2073,7 @@ class BaseConnection:
         """The username to login as `<'str/None'>`."""
         if self._user is None:
             return None
-        return utils.decode_bytes(self._user, self._encoding_c)
+        return utils.decode_bytes(self._user, self._encoding_ptr)
 
     @property
     def password(self) -> str:
@@ -2086,7 +2085,7 @@ class BaseConnection:
         """The default database to use by the connection. `<'str/None'>`."""
         if self._database is None:
             return None
-        return utils.decode_bytes(self._database, self._encoding_c)
+        return utils.decode_bytes(self._database, self._encoding_ptr)
 
     @property
     def charset(self) -> str:
@@ -2536,7 +2535,7 @@ class BaseConnection:
         :param sql `<'str'>`: The sql to be encoded.
         :returns `<'bytes'>`: The encoded sql in bytes.
         """
-        return utils.encode_str(sql, self._encoding_c)
+        return utils.encode_str(sql, self._encoding_ptr)
 
     # . client
     @cython.ccall
@@ -2544,7 +2543,7 @@ class BaseConnection:
     def set_charset(
         self,
         charset: str,
-        collation: str | None = None,
+        collation: object = None,
     ) -> cython.bint:
         """Set CHARACTER SET and COLLATION of the connection.
 
@@ -2595,7 +2594,7 @@ class BaseConnection:
     # . timeouts
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_read_timeout(self, value: int | None) -> cython.bint:
+    def set_read_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `net_read_timeout` in seconds.
 
         :param value `<'int/None'>`: Timeout in seconds for reading data from the network during a query. Defaults to `None`.
@@ -2613,7 +2612,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "net_read_timeout"
-        value = utils.validate_arg_uint(value, name, 1, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 1, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -2646,7 +2645,7 @@ class BaseConnection:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_write_timeout(self, value: int | None) -> cython.bint:
+    def set_write_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `net_write_timeout` in seconds.
 
         :param value `<'int/None'>`: Timeout in seconds for writing data to the network during a query. Defaults to `None`.
@@ -2661,7 +2660,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "net_write_timeout"
-        value = utils.validate_arg_uint(value, name, 1, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 1, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -2691,7 +2690,7 @@ class BaseConnection:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_wait_timeout(self, value: int | None) -> cython.bint:
+    def set_wait_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `wait_timeout` in seconds.
 
         :param value `<'int/None'>`: Timeout in seconds for waiting a non-interactive
@@ -2708,7 +2707,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "wait_timeout"
-        value = utils.validate_arg_uint(value, name, 1, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 1, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -2739,7 +2738,7 @@ class BaseConnection:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_interactive_timeout(self, value: int | None) -> cython.bint:
+    def set_interactive_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `interactive_timeout` in seconds.
 
         :param value `<'int/None'>`: Timeout in seconds for waiting an interactive client
@@ -2756,7 +2755,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "interactive_timeout"
-        value = utils.validate_arg_uint(value, name, 1, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 1, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -2787,7 +2786,7 @@ class BaseConnection:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_lock_wait_timeout(self, value: int | None) -> cython.bint:
+    def set_lock_wait_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `innodb_lock_wait_timeout` in seconds.
 
         :param value `<'int/None'>`: Timeout in seconds for waiting a row lock in the InnoDB storage engine. Defaults to `None`.
@@ -2804,7 +2803,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "innodb_lock_wait_timeout"
-        value = utils.validate_arg_uint(value, name, 1, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 1, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -2836,7 +2835,7 @@ class BaseConnection:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_execution_timeout(self, value: int | None) -> cython.bint:
+    def set_execution_timeout(self, value: object) -> cython.bint:
         """Set the connection (SESSION) `max_execution_time` in milliseconds.
 
         :param value `<'int/None'>`: Timeout in milliseconds for executing read-only SELECT statements. Defaults to `None`.
@@ -2852,7 +2851,7 @@ class BaseConnection:
         """
         # Validate timeout
         name = "max_execution_time"
-        value = utils.validate_arg_uint(value, name, 0, UINT_MAX)
+        value = utils.validate_arg_int(value, name, 0, UINT_MAX)
 
         # Reset timeout
         if value is None:
@@ -3240,14 +3239,14 @@ class BaseConnection:
         """
         # Read from packet
         pkt: MysqlPacket = self._read_packet()
-        data: cython.pchar = pkt._data_c
-        length: cython.Py_ssize_t = pkt._size
+        data: cython.p_const_char = pkt._data_ptr
+        length: cython.Py_ssize_t = pkt._data_size
 
         # . protocol version
         self._server_protocol_version = utils.unpack_uint8(data, 0)
 
         # . server version
-        loc: cython.Py_ssize_t = utils.find_null_term(data, 1)
+        loc: cython.Py_ssize_t = utils.find_null_byte(data, length, 1)
         self._server_info = utils.decode_bytes_latin1(data[1:loc])
         self._server_version_major = int(str_split(self._server_info, ".", 1)[0])
         i: cython.Py_ssize_t = loc + 1
@@ -3294,7 +3293,7 @@ class BaseConnection:
             # ref: https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
             # didn't use version checks as mariadb is corrected and reports
             # earlier than those two.
-            loc = utils.find_null_term(data, i)
+            loc = utils.find_null_byte(data, length, i)
             if loc < 0:  # pragma: no cover - very specific upstream bug
                 # not found \0 and last field so take it all
                 auth_plugin_name: bytes = data[i:length]
@@ -3844,7 +3843,7 @@ class BaseConnection:
         buffer: list[bytes] = []
         while True:
             data: bytes = self._read_bytes(4)
-            packet_header: cython.pchar = bytes_to_chars(data)
+            packet_header: cython.p_const_char = bytes_to_chars(data)
             btrl: cython.uint = utils.unpack_uint16(packet_header, 0)
             btrh: cython.uint = utils.unpack_uint8(packet_header, 2)
             packet_number: cython.uint = utils.unpack_uint8(packet_header, 3)
@@ -4037,34 +4036,31 @@ class Connection(BaseConnection):
         # fmt: off
         # . charset
         self._setup_charset(utils.validate_charset(charset, collation, utils.DEFUALT_CHARSET))
-        encoding: cython.pchar = self._encoding_c
         # . basic
         self._host = utils.validate_arg_str(host, "host", "localhost")
-        self._port = utils.validate_arg_uint(port, "port", 1, 65_535)
-        self._user = utils.validate_arg_bytes(user, "user", encoding, utils.DEFAULT_USER)
+        self._port = utils.validate_arg_int(port, "port", 1, 65_535)
+        self._user = utils.validate_arg_bytes(user, "user", self._encoding_ptr, utils.DEFAULT_USER)
         self._password = utils.validate_arg_bytes(password, "password", b"latin1", "")
-        self._database = utils.validate_arg_bytes(database, "database", encoding, None)
+        self._database = utils.validate_arg_bytes(database, "database", self._encoding_ptr, None)
         # . timeouts
-        self._connect_timeout = utils.validate_arg_uint(
-            connect_timeout, "connect_timeout", 1, utils.MAX_CONNECT_TIMEOUT)
-        self._read_timeout = utils.validate_arg_uint(read_timeout, "read_timeout", 1, UINT_MAX)
-        self._write_timeout = utils.validate_arg_uint(write_timeout, "write_timeout", 1, UINT_MAX)
-        self._wait_timeout = utils.validate_arg_uint(wait_timeout, "wait_timeout", 1, UINT_MAX)
-        self._interactive_timeout = utils.validate_arg_uint(interactive_timeout, "interactive_timeout", 1, UINT_MAX)
-        self._lock_wait_timeout = utils.validate_arg_uint(lock_wait_timeout, "lock_wait_timeout", 1, UINT_MAX)
-        self._execution_timeout = utils.validate_arg_uint(execution_timeout, "execution_timeout", 1, UINT_MAX)
+        self._connect_timeout = utils.validate_arg_int(connect_timeout, "connect_timeout", 1, utils.MAX_CONNECT_TIMEOUT)
+        self._read_timeout = utils.validate_arg_int(read_timeout, "read_timeout", 1, UINT_MAX)
+        self._write_timeout = utils.validate_arg_int(write_timeout, "write_timeout", 1, UINT_MAX)
+        self._wait_timeout = utils.validate_arg_int(wait_timeout, "wait_timeout", 1, UINT_MAX)
+        self._interactive_timeout = utils.validate_arg_int(interactive_timeout, "interactive_timeout", 1, UINT_MAX)
+        self._lock_wait_timeout = utils.validate_arg_int(lock_wait_timeout, "lock_wait_timeout", 1, UINT_MAX)
+        self._execution_timeout = utils.validate_arg_int(execution_timeout, "execution_timeout", 1, UINT_MAX)
         # . client
         self._bind_address = utils.validate_arg_str(bind_address, "bind_address", None)
         self._unix_socket = utils.validate_arg_str(unix_socket, "unix_socket", None)
         self._autocommit_mode = utils.validate_autocommit(autocommit)
         self._local_infile = bool(local_infile)
-        self._max_allowed_packet = utils.validate_max_allowed_packet(
-            max_allowed_packet, utils.DEFALUT_MAX_ALLOWED_PACKET, utils.MAXIMUM_MAX_ALLOWED_PACKET)
+        self._max_allowed_packet = utils.validate_max_allowed_packet(max_allowed_packet, utils.DEFALUT_MAX_ALLOWED_PACKET, utils.MAXIMUM_MAX_ALLOWED_PACKET)
         self._sql_mode = utils.validate_sql_mode(sql_mode)
         self._init_command = utils.validate_arg_str(init_command, "init_command", None)
         self._cursor = None
         self._cursor = self._validate_cursor(cursor)
-        self._setup_client_flag(utils.validate_arg_uint(client_flag, "client_flag", 0, UINT_MAX))
+        self._setup_client_flag(utils.validate_arg_int(client_flag, "client_flag", 0, UINT_MAX))
         self._setup_connect_attrs(utils.validate_arg_str(program_name, "program_name", None))
         # . ssl
         self._ssl_ctx = utils.validate_ssl(ssl)

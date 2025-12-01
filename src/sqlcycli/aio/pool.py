@@ -744,34 +744,31 @@ class Pool:
         # fmt: off
         # . charset
         self._charset = utils.validate_charset(charset, collation, utils.DEFUALT_CHARSET)
-        encoding: cython.pchar = self._charset._encoding_c
         # . basic
         self._host = utils.validate_arg_str(host, "host", "localhost")
-        self._port = utils.validate_arg_uint(port, "port", 1, 65_535)
-        self._user = utils.validate_arg_bytes(user, "user", encoding, utils.DEFAULT_USER)
+        self._port = utils.validate_arg_int(port, "port", 1, 65_535)
+        self._user = utils.validate_arg_bytes(user, "user", self._charset._encoding_ptr, utils.DEFAULT_USER)
         self._password = utils.validate_arg_bytes(password, "password", b"latin1", "")
-        self._database = utils.validate_arg_bytes(database, "database", encoding, None)
+        self._database = utils.validate_arg_bytes(database, "database", self._charset._encoding_ptr, None)
         # . timeouts
-        self._connect_timeout = utils.validate_arg_uint(
-            connect_timeout, "connect_timeout", 1, utils.MAX_CONNECT_TIMEOUT)
-        self._read_timeout = utils.validate_arg_uint(read_timeout, "read_timeout", 1, UINT_MAX)
-        self._write_timeout = utils.validate_arg_uint(write_timeout, "write_timeout", 1, UINT_MAX)
-        self._wait_timeout = utils.validate_arg_uint(wait_timeout, "wait_timeout", 1, UINT_MAX)
-        self._interactive_timeout = utils.validate_arg_uint(interactive_timeout, "interactive_timeout", 1, UINT_MAX)
-        self._lock_wait_timeout = utils.validate_arg_uint(lock_wait_timeout, "lock_wait_timeout", 1, UINT_MAX)
-        self._execution_timeout = utils.validate_arg_uint(execution_timeout, "execution_timeout", 1, UINT_MAX)
+        self._connect_timeout = utils.validate_arg_int(connect_timeout, "connect_timeout", 1, utils.MAX_CONNECT_TIMEOUT)
+        self._read_timeout = utils.validate_arg_int(read_timeout, "read_timeout", 1, UINT_MAX)
+        self._write_timeout = utils.validate_arg_int(write_timeout, "write_timeout", 1, UINT_MAX)
+        self._wait_timeout = utils.validate_arg_int(wait_timeout, "wait_timeout", 1, UINT_MAX)
+        self._interactive_timeout = utils.validate_arg_int(interactive_timeout, "interactive_timeout", 1, UINT_MAX)
+        self._lock_wait_timeout = utils.validate_arg_int(lock_wait_timeout, "lock_wait_timeout", 1, UINT_MAX)
+        self._execution_timeout = utils.validate_arg_int(execution_timeout, "execution_timeout", 1, UINT_MAX)
         # . client
         self._bind_address = utils.validate_arg_str(bind_address, "bind_address", None)
         self._unix_socket = utils.validate_arg_str(unix_socket, "unix_socket", None)
         self._autocommit_mode = utils.validate_autocommit(autocommit)
         self._local_infile = local_infile
-        self._max_allowed_packet = utils.validate_max_allowed_packet(
-            max_allowed_packet, utils.DEFALUT_MAX_ALLOWED_PACKET, utils.MAXIMUM_MAX_ALLOWED_PACKET)
+        self._max_allowed_packet = utils.validate_max_allowed_packet(max_allowed_packet, utils.DEFALUT_MAX_ALLOWED_PACKET, utils.MAXIMUM_MAX_ALLOWED_PACKET)
         self._sql_mode = utils.validate_sql_mode(sql_mode)
         self._init_command = utils.validate_arg_str(init_command, "init_command", None)
         self._cursor = validate_async_cursor(cursor)
         self._sync_cursor = validate_sync_cursor(cursor)
-        self._client_flag = utils.validate_arg_uint(client_flag, "client_flag", 0, UINT_MAX)
+        self._client_flag = utils.validate_arg_int(client_flag, "client_flag", 0, UINT_MAX)
         self._program_name = utils.validate_arg_str(program_name, "program_name", None)
         # . ssl
         self._ssl_ctx = utils.validate_ssl(ssl)
@@ -806,7 +803,7 @@ class Pool:
         self,
         min_size: cython.int,
         max_size: cython.int,
-        recycle: int | None,
+        recycle: object,
     ) -> cython.bint:
         """(internal) Setup the pool.
 
@@ -872,7 +869,7 @@ class Pool:
         """The username to login as `<'str/None'>`."""
         if self._user is None:
             return None
-        return utils.decode_bytes(self._user, self._charset._encoding_c)
+        return utils.decode_bytes(self._user, self._charset._encoding_ptr)
 
     @property
     def password(self) -> str:
@@ -884,7 +881,7 @@ class Pool:
         """The default database to use by the connections. `<'str/None'>`."""
         if self._database is None:
             return None
-        return utils.decode_bytes(self._database, self._charset._encoding_c)
+        return utils.decode_bytes(self._database, self._charset._encoding_ptr)
 
     @property
     def charset(self) -> str:
@@ -1089,7 +1086,7 @@ class Pool:
 
     @cython.ccall
     @cython.exceptval(-1, check=False)
-    def set_recycle(self, recycle: int | None) -> cython.bint:
+    def set_recycle(self, recycle: object) -> cython.bint:
         """Change the connection recycle time.
 
         :param recycle `<'int/None'>`: New connection recycle time in seconds.
@@ -1878,7 +1875,7 @@ class Pool:
     async def clear(self) -> None:
         """Clear all the free [async] connections in the pool.
 
-        This method closes and removes all the idling free [async] 
+        This method closes and removes all the idling free [async]
         connections in the pool, without affecting in-use ones.
         """
         self._close_sync_conn()

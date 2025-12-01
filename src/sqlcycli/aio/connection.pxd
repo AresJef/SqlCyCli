@@ -32,7 +32,6 @@ cdef class Cursor:
     cdef:
         bint _unbuffered
         BaseConnection _conn
-        char* _encoding_c
         bytes _executed_sql
         unsigned long long _arraysize
         MysqlResult _result
@@ -102,7 +101,7 @@ cdef class BaseConnection:
         str _collation
         unsigned int _charset_id
         bytes _encoding
-        char* _encoding_c
+        const char* _encoding_ptr
         bint _charset_changed
         # Timeouts
         object _connect_timeout
