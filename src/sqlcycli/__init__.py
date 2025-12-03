@@ -1,10 +1,10 @@
-from sqlcycli import constants, errors, sqlfunc, sqlintvl
+from sqlcycli import aio, constants, errors, sqlfunc, sqlintvl
 from sqlcycli._ssl import SSL
 from sqlcycli._auth import AuthPlugin
 from sqlcycli._optionfile import OptionFile
-from sqlcycli.transcode import escape, ObjStr, BIT, JSON
 from sqlcycli.charset import Charset, Charsets, all_charsets
 from sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket
+from sqlcycli.transcode import escape, ObjStr, CustomEscapeType, BIT, JSON
 from sqlcycli.connection import (
     Cursor,
     DictCursor,
@@ -15,13 +15,13 @@ from sqlcycli.connection import (
     BaseConnection,
     Connection,
 )
-from sqlcycli import aio
 from sqlcycli.aio.pool import Pool, PoolConnection, PoolSyncConnection
 from sqlcycli._connect import connect, create_pool
 
 
 __all__ = [
     # Module
+    "aio",
     "constants",
     "errors",
     "sqlfunc",
@@ -42,12 +42,12 @@ __all__ = [
     "SSDfCursor",
     "BaseConnection",
     "Connection",
-    "aio",
     "Pool",
     "PoolConnection",
     "PoolSyncConnection",
     # Type
     "ObjStr",
+    "CustomEscapeType",
     "BIT",
     "JSON",
     # Function
