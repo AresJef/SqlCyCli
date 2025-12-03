@@ -10,9 +10,15 @@ cdef:
 # Custom Escape Types
 cdef class ObjStr:
     pass
-
+    
 cdef class CustomEscapeType(ObjStr):
     cdef object _obj
+
+cdef class BIT(CustomEscapeType):
+    pass
+
+cdef class JSON(CustomEscapeType):
+    pass
 
 # Escape
 cpdef object escape(object data, bint many=?, bint itemize=?)

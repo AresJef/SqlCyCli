@@ -3021,24 +3021,6 @@ cdef inline object _decode_time(bytes value):
         except Exception:
             return PyUnicode_DecodeASCII(chs, chs_len, b"surrogateescape")  # exit
 
-cdef inline object _decode_set(bytes value, const char* encoding):
-    """(internal) Decode the value from a SET field `<'set'>`.
-
-    :param value `<'bytes'>`: The value from a SET field.
-    :param encoding `<'char*'>`: The encoding of the field.
-    :returns `<'set'>`: The decoded python object.
-
-    ## Example
-    ```python
-    _decode_set(b'item1,item2,item3', b"utf8")
-    >>> {'item1', 'item2', 'item3'}  # <'set'>
-    ```
-    """
-    cdef: 
-        object decoded_str = _decode_string(value, encoding, False)
-        list   items = str_split(decoded_str, ",", -1)
-    return set(items)
-
 cdef inline object _decode_json(bytes value, const char* encoding, bint decode_json):
     """(internal) Decode the value from a JSON field `<'Any'>`.
 
@@ -3155,17 +3137,12 @@ cpdef object decode(bytes value, unsigned int field_type, const char* encoding, 
     ):
         return _decode_bit(value, decode_bit)
 
-    # ENUM
+    # ENUMERATED
     if field_type in (
         _FIELD_TYPE.ENUM,           # ENUM 247
-    ):
-        return _decode_string(value, encoding, False)
-
-    # SET
-    if field_type in (
         _FIELD_TYPE.SET,            # SET 248
     ):
-        return _decode_set(value, encoding)
+        return _decode_string(value, encoding, False)
 
     # JSON
     if field_type in (
