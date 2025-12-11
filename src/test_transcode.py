@@ -149,14 +149,8 @@ class TestEscape(TestCase):
             for dtype in (float, np.float16, np.float32, np.float64):
                 self.assertEqualEscape(expt, dtype(data))
 
-        with self.assertRaises(errors.EscapeValueError):
-            escape(float("nan"))
-        with self.assertRaises(errors.EscapeValueError):
-            escape(float("inf"))
-        with self.assertRaises(errors.EscapeValueError):
-            escape(np.nan)
-        with self.assertRaises(errors.EscapeValueError):
-            escape(np.inf)
+        for data in (float("nan"), float("inf"), np.nan, np.inf):
+            self.assertEqual(escape(data), "NULL")
 
         self.log_ended(test)
 
@@ -551,7 +545,7 @@ class TestEscape(TestCase):
             arr1 = [i for i in range(-10, 11)]
             exp1 = "(" + ",".join(str(i) for i in arr1) + ")"  # literal
             exp2 = tuple(str(i) for i in arr1)  # itemize
-            exp3 = [str(i) for i in arr1]  # many
+            exp3 = list(exp2)  # many
             for arr_1d in (np.array(arr1, dtype=dtype), pd.Series(arr1, dtype=dtype)):
                 self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
                 self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
@@ -595,7 +589,7 @@ class TestEscape(TestCase):
             arr1 = [i for i in range(11)]
             exp1 = "(" + ",".join(str(i) for i in arr1) + ")"  # literal
             exp2 = tuple(str(i) for i in arr1)  # itemize
-            exp3 = [str(i) for i in arr1]  # many
+            exp3 = list(exp2)  # many
             for arr_1d in (np.array(arr1, dtype=dtype), pd.Series(arr1, dtype=dtype)):
                 self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
                 self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
@@ -634,12 +628,13 @@ class TestEscape(TestCase):
         test = "ESCAPE ARRAY[FLOAT]"
         self.log_start(test)
 
+        # normal floats
         for dtype in (np.float32, np.float64):
             # . 1-dimensional
             arr1 = [-2.2, -1.1, 0.0, 1.1, 2.2]
             exp1 = "(" + ",".join(str(i) for i in arr1) + ")"  # literal
             exp2 = tuple(str(i) for i in arr1)  # itemize
-            exp3 = [str(i) for i in arr1]  # many
+            exp3 = list(exp2)  # many
             for arr_1d in (np.array(arr1, dtype=dtype), pd.Series(arr1, dtype=dtype)):
                 self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
                 self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
@@ -671,6 +666,54 @@ class TestEscape(TestCase):
                 self.assertEqualEscape("()", arr_2d, many=False, itemize=False)
                 self.assertEqualEscape([], arr_2d, many=False, itemize=True)
                 self.assertEqualEscape([], arr_2d, many=True, itemize=True)
+
+        # float64: nan / inf mixed
+        for dtype in (np.float64,):
+            # . 1-dimensional
+            arr1 = [-1.1, 0.0, 1.1, np.nan, np.inf, -np.inf]
+            exp1 = "(-1.1,0.0,1.1,NULL,NULL,NULL)"  # literal
+            exp2 = ("-1.1", "0.0", "1.1", "NULL", "NULL", "NULL")
+            exp3 = list(exp2)
+            for arr_1d in (np.array(arr1, dtype=dtype), pd.Series(arr1, dtype=dtype)):
+                self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
+                self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
+                self.assertEqualEscape(exp3, arr_1d, many=True, itemize=True)
+
+            # . 2-dimensional
+            arr2 = [arr1, arr1]
+            exp1 = ",".join([exp1, exp1])  # literal
+            exp2 = [exp2, exp2]  # itemize / many
+            for arr_2d in (
+                np.array(arr2, dtype=dtype),
+                pd.DataFrame(arr2, dtype=dtype),
+            ):
+                self.assertEqualEscape(exp1, arr_2d, many=False, itemize=False)
+                self.assertEqualEscape(exp2, arr_2d, many=False, itemize=True)
+                self.assertEqualEscape(exp2, arr_2d, many=True, itemize=True)
+
+        # float32: nan / inf
+        for dtype in (np.float32,):
+            # . 1-dimensional
+            arr1 = [np.nan, np.inf, -np.inf]
+            exp1 = "(NULL,NULL,NULL)"  # literal
+            exp2 = ("NULL", "NULL", "NULL")
+            exp3 = list(exp2)
+            for arr_1d in (np.array(arr1, dtype=dtype), pd.Series(arr1, dtype=dtype)):
+                self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
+                self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
+                self.assertEqualEscape(exp3, arr_1d, many=True, itemize=True)
+
+            # . 2-dimensional
+            arr2 = [arr1, arr1]
+            exp1 = ",".join([exp1, exp1])  # literal
+            exp2 = [exp2, exp2]  # itemize / many
+            for arr_2d in (
+                np.array(arr2, dtype=dtype),
+                pd.DataFrame(arr2, dtype=dtype),
+            ):
+                self.assertEqualEscape(exp1, arr_2d, many=False, itemize=False)
+                self.assertEqualEscape(exp2, arr_2d, many=False, itemize=True)
+                self.assertEqualEscape(exp2, arr_2d, many=True, itemize=True)
 
         self.log_ended(test)
 
@@ -723,6 +766,37 @@ class TestEscape(TestCase):
 
         test = "ESCAPE ARRAY[DATETIME64]"
         self.log_start(test)
+
+        # . 1-dimensional: NaT
+        exp1 = "('1970-01-01 00:00:00',NULL)"
+        exp2 = ("'1970-01-01 00:00:00'", "NULL")
+        exp3 = list(exp2)
+        arr1 = ["1970-01-01", "NaT"]
+        for unit in ("D", "h", "m", "s", "ms", "us", "ns"):
+            arr_1d = np.array(arr1, dtype="datetime64[%s]" % unit)
+            self.assertEqualEscape(exp1, arr_1d, many=False, itemize=False)
+            self.assertEqualEscape(exp2, arr_1d, many=False, itemize=True)
+            self.assertEqualEscape(exp3, arr_1d, many=True, itemize=True)
+            if unit not in ("D", "h", "m"):
+                s = pd.Series(arr_1d)
+                self.assertEqualEscape(exp1, s, many=False, itemize=False)
+                self.assertEqualEscape(exp2, s, many=False, itemize=True)
+                self.assertEqualEscape(exp3, s, many=True, itemize=True)
+
+        # . 2-dimensional: NaT
+        exp1 = "('1970-01-01 00:00:00',NULL),('1970-01-02 00:00:00',NULL)"
+        exp2 = [("'1970-01-01 00:00:00'", "NULL"), ("'1970-01-02 00:00:00'", "NULL")]
+        arr2 = [["1970-01-01", "NaT"], ["1970-01-02", "NaT"]]
+        for unit in ("D", "h", "m", "s", "ms", "us", "ns"):
+            arr_2d = np.array(arr2, dtype="datetime64[%s]" % unit)
+            self.assertEqualEscape(exp1, arr_2d, many=False, itemize=False)
+            self.assertEqualEscape(exp2, arr_2d, many=False, itemize=True)
+            self.assertEqualEscape(exp2, arr_2d, many=True, itemize=True)
+            if unit not in ("D", "h", "m"):
+                df = pd.DataFrame(arr2, dtype="datetime64[%s]" % unit)
+                self.assertEqualEscape(exp1, df, many=False, itemize=False)
+                self.assertEqualEscape(exp2, df, many=False, itemize=True)
+                self.assertEqualEscape(exp2, df, many=True, itemize=True)
 
         # fmt: off
         # . 1-dimensional: datetime64[D]
@@ -1744,13 +1818,13 @@ class TestDecode(TestCase):
 
         # SET values
         for value, expt in (
-            (b"red", {"red"}),
-            (b"green", {"green"}),
-            (b"blue", {"blue"}),
-            (b"red,green", {"red", "green"}),
-            (b"red,blue", {"red", "blue"}),
-            (b"green,blue", {"green", "blue"}),
-            (b"red,green,blue", {"red", "green", "blue"}),
+            (b"red", "red"),
+            (b"green", "green"),
+            (b"blue", "blue"),
+            (b"red,green", "red,green"),
+            (b"red,blue", "red,blue"),
+            (b"green,blue", "green,blue"),
+            (b"red,green,blue", "red,green,blue"),
         ):
             for field_type in (FIELD_TYPE.SET,):
                 self.assertEqualDecode(expt, value, field_type)

@@ -6,6 +6,7 @@
 cimport cython
 cimport numpy as np
 from libc cimport math
+from libc.limits cimport LLONG_MIN
 from cpython cimport datetime
 from cpython.set cimport PySet_Size as set_len
 from cpython.dict cimport PyDict_Size as dict_len
@@ -80,6 +81,7 @@ cdef:
     object T_PD_TIMEDELTAINDEX = pd.TimedeltaIndex
     object T_PD_SERIES = pd.Series
     object T_PD_DATAFRAME = pd.DataFrame
+    object T_PD_NAT = pd.NaT.__class__
     object T_PYDT = Pydt
     object T_PDDT = Pddt
 
@@ -97,12 +99,6 @@ _ESCAPE_TABLE[ord("'")] = "\\'"
 cdef list _BRACKET_TABLE = [chr(x) for x in range(128)]
 _BRACKET_TABLE[ord("[")] = "("
 _BRACKET_TABLE[ord("]")] = ")"
-# . table to replace json datetime
-cdef list _JSON_DATETIME_TABLE = [chr(x) for x in range(128)]
-_JSON_DATETIME_TABLE[ord("T")] = " "
-_JSON_DATETIME_TABLE[ord('"')] = "'"
-_JSON_DATETIME_TABLE[ord("[")] = "("
-_JSON_DATETIME_TABLE[ord("]")] = ")"
 
 # Utils ===============================================================================================
 # . bytes
@@ -840,14 +836,11 @@ cdef inline str escape_float64(object data):
 
     :param data `<'numpy.float_'>`: Numpy float data to escape.
     :returns `<'str'>`: Escaped float literal.
-    :raises `<'ValueError'>`: If float value is invalid.
     """
     #: For numpy.float64, Python built-in `str()` function 
     #: performs faster than orjson for most small float 
     #: numbers (with less than 6 decimal places).
-    if math.isfinite(data):
-        return str(data)
-    raise ValueError("The float value must be finite, instead got '%s'." % str(data))
+    return str(data) if math.isfinite(data) else "NULL"
 
 cdef inline str escape_datetime64(object data):
     """Escape numpy.datetime64 to literal `<'str'>`.
@@ -864,6 +857,10 @@ cdef inline str _escape_datetime64_value(long long value, int unit):
     :param unit `<'int'>`: Numpy datetime64 unit (`ENUM NPY_DATETIMEUNIT`).
     :returns `<'str'>`: Escaped datetime64 literal.
     """
+    # Handle NaT
+    if value == LLONG_MIN:
+        return "NULL"
+
     # Normalize to microseconds
     cdef long long us, r
     if unit == np.NPY_DATETIMEUNIT.NPY_FR_ns:  # nanosecond
@@ -1125,18 +1122,18 @@ cdef inline str _escape_ndarray_float(np.ndarray arr):
         int ndim = arr.ndim
         np.npy_intp* shape = arr.shape
         np.npy_intp size_i, size_j
-        str res_s
+        str  res_s
+        list res_l
 
     # 1-dimension
     if ndim == 1:
         size_i = shape[0]
         if size_i == 0:
             return "()"  # exit
+        # . slow approach for nan & inf
         if not is_arr_1d_float_finite(arr, size_i):
-            raise ValueError(
-                "Cannot escape 1-dimensional 'ndarray[%s]' "
-                "with non-finite values: 'nan' & 'inf'." % arr.dtype
-            )
+            res_l = _escape_ndarray_1d_float_items_slow(arr, size_i)
+            return "(" + ",".join(res_l) + ")"
         #: 'res_s' will be like
         #: "[1.0,2.0,3.0]"
         res_s = orjson_dumps_numpy(arr)
@@ -1149,11 +1146,10 @@ cdef inline str _escape_ndarray_float(np.ndarray arr):
         size_j = shape[1]
         if size_j == 0:
             return "()"  # exit
-        if not is_arr_2d_float_finite(arr, shape[0], size_j):
-            raise ValueError(
-                "Cannot escape 2-dimensional 'ndarray[%s]' "
-                "with non-finite values: 'nan' & 'inf'." % arr.dtype
-            )
+        size_i = shape[0]
+        # . slow approach for nan & inf
+        if not is_arr_2d_float_finite(arr, size_i, size_j):
+            return _escape_ndarray_2d_float_slow(arr, size_i, size_j)
         #: 'res_s' will be like
         #: "[[1.0,2.0,3.0],[4.0,5.0,6.0]]"
         res_s = orjson_dumps_numpy(arr)
@@ -1166,6 +1162,72 @@ cdef inline str _escape_ndarray_float(np.ndarray arr):
 
     # Unsupported dimension
     _raise_invalid_array_dim(arr)
+
+cdef inline str _escape_ndarray_2d_float_slow(np.ndarray arr, np.npy_intp size_i=-1, np.npy_intp size_j=-1):
+    """(internal) Escape 2-D numpy.ndarray with `float` dtype to 
+    literal through native str (slow) approach `<'str'>`.
+    
+    :param arr `<ndarray'>`: The 2-dimensional float array to escape.
+    :param size_i `<'int'>`: Optional size of the first dimension. Defaults to `-1`.
+    :param size_j `<'int'>`: Optional size of the second dimension. Defaults to `-1`.
+    :returns `<'str'>`: Escaped ndarray literal.
+    """
+    # Setup
+    cdef:
+        int dtype = np.PyArray_TYPE(arr)
+        np.npy_float64* f64_ptr
+        np.npy_float64  f64_v
+        np.npy_float32* f32_ptr
+        np.npy_float32  f32_v
+        np.npy_intp     i, j, i_stride
+        list res_l, row_l
+    if size_i < 0:
+        size_i = arr.shape[0]
+    if size_j < 0:
+        size_j = arr.shape[1]
+
+    # Escape: float64
+    if dtype == np.NPY_TYPES.NPY_FLOAT64:
+        f64_ptr = <np.npy_float64*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            row_l = []
+            for j in range(size_j):
+                f64_v = f64_ptr[i_stride + j]
+                if not math.isfinite(f64_v):
+                    row_l.append("NULL")
+                else:
+                    row_l.append(str(f64_v))
+            res_l.append("(" + ",".join(row_l) + ")")
+        return ",".join(res_l)
+
+    # Cast: float16 -> float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT16:
+        arr = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_FLOAT32)
+        dtype = np.NPY_TYPES.NPY_FLOAT32
+
+    # Escape: float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT32:
+        f32_ptr = <np.npy_float32*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            row_l = []
+            for j in range(size_j):
+                f32_v = f32_ptr[i_stride + j]
+                if not math.isfinite(f32_v):
+                    row_l.append("NULL")
+                else:
+                    row_l.append(str(f32_v))
+            res_l.append("(" + ",".join(row_l) + ")")
+        return ",".join(res_l)
+
+    # Unsupported dtype
+    raise AssertionError(
+        "_escape_ndarray_2d_float_items_slow: The ndarray dtype must be 'float16', 'float32' or 'float64', "
+        "instead got 'ndarray[%s]'." % arr.dtype
+    )
 
 cdef inline str _escape_ndarray_bool(np.ndarray arr):
     """(internal) Escape numpy.ndarray with `bool` dtype to literal `<'str'>`.
@@ -1219,36 +1281,39 @@ cdef inline str _escape_ndarray_dt64(np.ndarray arr):
     cdef: 
         int ndim = arr.ndim
         np.npy_intp* shape = arr.shape
-        str res_s
+        np.npy_intp size_i, size_j, i, j, i_stride
+        int unit
+        np.npy_int64* arr_ptr
+        list res_l
 
     # 1-dimension
     if ndim == 1:
-        if shape[0] == 0:
+        size_i = shape[0]
+        if size_i == 0:
             return "()"  # exit
-        #: 'res_s' will be like
-        #: '["1970-01-01T00:00:09","1970-01-01T00:00:10"]'
-        res_s = orjson_dumps_numpy(arr)
-        #: replace 'T' with space
-        #: replace double quotes with single quotes
-        #: replace brackets with parenthesis
-        #: "('1970-01-01 00:00:09','1970-01-01 00:00:10')"
-        return str_translate(res_s, _JSON_DATETIME_TABLE, NULL)
+        unit = cyutils.get_arr_nptime_unit(arr)
+        arr_ptr = <np.npy_int64*> np.PyArray_DATA(arr)
+        res_l = [_escape_datetime64_value(arr_ptr[i], unit) for i in range(size_i)]
+        return "(" + ",".join(res_l) + ")"
 
     # 2-dimension
     if ndim == 2:
-        if shape[1] == 0:
+        size_j = shape[1]
+        if size_j == 0:
             return "()"  # exit
-        #: 'res_s' will be like
-        #: '[["1969-12-31T23:59:50", ...],["1970-01-01T00:00:00",...]]'
-        res_s = orjson_dumps_numpy(arr)
-        #: remove the outer brackets
-        #: '["1969-12-31T23:59:50", ...],["1970-01-01T00:00:00",...]'
-        res_s = str_substr(res_s, 1, str_len(res_s) - 1)
-        #: replace 'T' with space
-        #: replace double quotes with single quotes
-        #: replace brackets with parenthesis
-        #: "('1969-12-31 23:59:50', ...),('1970-01-01 00:00:00',...)"
-        return str_translate(res_s, _JSON_DATETIME_TABLE, NULL)
+        size_i = shape[0]
+        unit = cyutils.get_arr_nptime_unit(arr)
+        arr_ptr = <np.npy_int64*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            res_l.append(
+                "(" + ",".join(
+                    [_escape_datetime64_value(arr_ptr[i_stride + j], unit) 
+                    for j in range(size_j)]
+                ) + ")"
+            )
+        return ",".join(res_l)
 
     # Unsupported dimension
     _raise_invalid_array_dim(arr)
@@ -1506,6 +1571,10 @@ cdef inline str escape_uncommon(object data, dtype: type):
         return escape_memoryview(data)
     if dtype is T_NP_BYTES:
         return escape_bytes(data)
+
+    #  NULL
+    if dtype is T_PD_NAT:
+        return escape_none(data)
 
     # Sequence types
     if dtype is frozenset:
@@ -2004,11 +2073,10 @@ cdef inline object _escape_ndarray_float_items(np.ndarray arr, bint many):
         size_i = shape[0]
         if size_i == 0:
             return [] if many else ()  # exit
+        # . slow approach for nan & inf
         if not is_arr_1d_float_finite(arr, size_i):
-            raise ValueError(
-                "Cannot escape 1-dimensional 'ndarray[%s]' "
-                "with non-finite values: 'nan' & 'inf'." % arr.dtype
-            )
+            res_l = _escape_ndarray_1d_float_items_slow(arr, size_i)
+            return res_l if many else tuple(res_l)
         #: 'res_s' will be like
         #: "[1.0,2.0,3.0]"
         res_s = orjson_dumps_numpy(arr)
@@ -2025,11 +2093,10 @@ cdef inline object _escape_ndarray_float_items(np.ndarray arr, bint many):
         size_j = shape[1]
         if size_j == 0:
             return []  # exit
-        if not is_arr_2d_float_finite(arr, shape[0], size_j):
-            raise ValueError(
-                "Cannot escape 2-dimensional 'ndarray[%s]' "
-                "with non-finite values: 'nan' & 'inf'." % arr.dtype
-            )
+        size_i = shape[0]
+        # . slow approach for nan & inf
+        if not is_arr_2d_float_finite(arr, size_i, size_j):
+            return _escape_ndarray_2d_float_items_slow(arr, size_i, size_j)
         #: 'res_s' will be like
         #: "[[1.0,2.0,3.0],[4.0,5.0,6.0]]"
         res_s = orjson_dumps_numpy(arr)
@@ -2045,6 +2112,127 @@ cdef inline object _escape_ndarray_float_items(np.ndarray arr, bint many):
 
     # Unsupported dimension
     _raise_invalid_array_dim(arr)
+
+cdef inline list _escape_ndarray_1d_float_items_slow(np.ndarray arr, np.npy_intp size=-1):
+    """(internal) Escape 1-D numpy.ndarray with `float` dtype to sequences 
+    of literal through native str (slow) approach `<'list'>`.
+
+    :param arr `<ndarray'>`: The 1-dimensional float array to escape.
+    :param size `<'int'>`: Optional size of the ndarray. Defaults to `-1`.
+    :returns `<'list'>`: Escaped sequences of literals.
+    """
+    # Setup
+    cdef:
+        int dtype = np.PyArray_TYPE(arr)
+        np.npy_float64* f64_ptr
+        np.npy_float64  f64_v
+        np.npy_float32* f32_ptr
+        np.npy_float32  f32_v
+        np.npy_intp     i
+        list res_l
+    if size < 0:
+        size = arr.shape[0]
+
+    # Escape: float64
+    if dtype == np.NPY_TYPES.NPY_FLOAT64:
+        f64_ptr = <np.npy_float64*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size):
+            f64_v = f64_ptr[i]
+            if not math.isfinite(f64_v):
+                res_l.append("NULL")
+            else:
+                res_l.append(str(f64_v))
+        return res_l
+
+    # Cast: float16 -> float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT16:
+        arr = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_FLOAT32)
+        dtype = np.NPY_TYPES.NPY_FLOAT32
+
+    # Escape: float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT32:
+        f32_ptr = <np.npy_float32*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size):
+            f32_v = f32_ptr[i]
+            if not math.isfinite(f32_v):
+                res_l.append("NULL")
+            else:
+                res_l.append(str(f32_v))
+        return res_l
+
+    # Unsupported dtype
+    raise AssertionError(
+        "_escape_ndarray_1d_float_items_slow: The ndarray dtype must be 'float16', 'float32' or 'float64', "
+        "instead got 'ndarray[%s]'." % arr.dtype
+    )
+
+cdef inline list _escape_ndarray_2d_float_items_slow(np.ndarray arr, np.npy_intp size_i=-1, np.npy_intp size_j=-1):
+    """(internal) Escape 2-D numpy.ndarray with `float` dtype to sequences 
+    of literal through native str (slow) approach `<'list[tuple]'>`.
+    
+    :param arr `<ndarray'>`: The 2-dimensional float array to escape.
+    :param size_i `<'int'>`: Optional size of the first dimension. Defaults to `-1`.
+    :param size_j `<'int'>`: Optional size of the second dimension. Defaults to `-1`.
+    :returns `<'list[tuple]'>`: Escaped sequences of literals.
+    """
+    # Setup
+    cdef:
+        int dtype = np.PyArray_TYPE(arr)
+        np.npy_float64* f64_ptr
+        np.npy_float64  f64_v
+        np.npy_float32* f32_ptr
+        np.npy_float32  f32_v
+        np.npy_intp     i, j, i_stride
+        list res_l, row_l
+    if size_i < 0:
+        size_i = arr.shape[0]
+    if size_j < 0:
+        size_j = arr.shape[1]
+
+    # Escape: float64
+    if dtype == np.NPY_TYPES.NPY_FLOAT64:
+        f64_ptr = <np.npy_float64*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            row_l = []
+            for j in range(size_j):
+                f64_v = f64_ptr[i_stride + j]
+                if not math.isfinite(f64_v):
+                    row_l.append("NULL")
+                else:
+                    row_l.append(str(f64_v))
+            res_l.append(tuple(row_l))
+        return res_l
+
+    # Cast: float16 -> float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT16:
+        arr = np.PyArray_Cast(arr, np.NPY_TYPES.NPY_FLOAT32)
+        dtype = np.NPY_TYPES.NPY_FLOAT32
+
+    # Escape: float32
+    if dtype == np.NPY_TYPES.NPY_FLOAT32:
+        f32_ptr = <np.npy_float32*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            row_l = []
+            for j in range(size_j):
+                f32_v = f32_ptr[i_stride + j]
+                if not math.isfinite(f32_v):
+                    row_l.append("NULL")
+                else:
+                    row_l.append(str(f32_v))
+            res_l.append(tuple(row_l))
+        return res_l
+
+    # Unsupported dtype
+    raise AssertionError(
+        "_escape_ndarray_2d_float_items_slow: The ndarray dtype must be 'float16', 'float32' or 'float64', "
+        "instead got 'ndarray[%s]'." % arr.dtype
+    )
 
 cdef inline object _escape_ndarray_bool_items(np.ndarray arr, bint many):
     """(internal) Escape the elements of a numpy.ndarray with `bool` dtype to sequences of literals `<'tuple/list'>`.
@@ -2098,48 +2286,37 @@ cdef inline object _escape_ndarray_dt64_items(np.ndarray arr, bint many):
     cdef: 
         int ndim = arr.ndim
         np.npy_intp* shape = arr.shape
-        str  res_s
+        np.npy_intp size_i, size_j, i, j, i_stride
+        int unit
+        np.npy_int64* arr_ptr
         list res_l
 
     # 1-dimension
     if ndim == 1:
-        if shape[0] == 0:
+        size_i = shape[0]
+        if size_i == 0:
             return [] if many else ()  # exit
-        #: 'res_s' will be like
-        #: '["1970-01-01T00:00:09","1970-01-01T00:00:10"]'
-        res_s = orjson_dumps_numpy(arr)
-        #: remove outer brackets
-        #: '"1970-01-01T00:00:09","1970-01-01T00:00:10"'
-        res_s = str_substr(res_s, 1, str_len(res_s) - 1)
-        #: replace 'T' with space
-        #: replace double quotes with single quotes
-        #: "'1970-01-01 00:00:09','1970-01-01 00:00:10'"
-        res_s = str_translate(res_s, _JSON_DATETIME_TABLE, NULL)
-        #: split to list by comma
-        #: ["'1970-01-01 00:00:09'", "'1970-01-01 00:00:10'"]
-        res_l = str_split(res_s, ",", -1)
+        unit = cyutils.get_arr_nptime_unit(arr)
+        arr_ptr = <np.npy_int64*> np.PyArray_DATA(arr)
+        res_l = [_escape_datetime64_value(arr_ptr[i], unit) for i in range(size_i)]
         return res_l if many else tuple(res_l)
 
     # 2-dimension
     if ndim == 2:
-        if shape[1] == 0:
+        size_j = shape[1]
+        if size_j == 0:
             return []  # exit
-        #: 'res_s' will be like
-        #: '[["1969-12-31T23:59:50", ...],["1970-01-01T00:00:00",...]]'
-        res_s = orjson_dumps_numpy(arr)
-        #: remove the outer 2 brackets
-        #: '"1969-12-31T23:59:50", ...],["1970-01-01T00:00:00",...'
-        res_s = str_substr(res_s, 2, str_len(res_s) - 2)
-        #: replace 'T' with space
-        #: replace double quotes with single quotes
-        #: "'1969-12-31 23:59:50', ...),('1970-01-01 00:00:00',..."
-        res_s = str_translate(res_s, _JSON_DATETIME_TABLE, NULL)
-        #: split to list by "),("
-        #: ["'1969-12-31 23:59:50', ...", "'1970-01-01 00:00:00',..."]
-        res_l = str_split(res_s, "),(", -1)
-        #: for each item, split by comma and convert to tuple
-        #: [("'1969-12-31 23:59:50'", ...), ("'1970-01-01 00:00:00'",...)]
-        return [tuple(str_split(i, ",", -1)) for i in res_l]
+        size_i = shape[0]
+        unit = cyutils.get_arr_nptime_unit(arr)
+        arr_ptr = <np.npy_int64*> np.PyArray_DATA(arr)
+        res_l = []
+        for i in range(size_i):
+            i_stride = i * size_j
+            res_l.append(
+                tuple([_escape_datetime64_value(arr_ptr[i_stride + j], unit) 
+                for j in range(size_j)])
+            )
+        return res_l
 
     # Unsupported dimension
     _raise_invalid_array_dim(arr)
@@ -2397,6 +2574,10 @@ cdef inline object escape_uncommon_items(object data, bint many, type dtype):
         return escape_memoryview(data)
     if dtype is T_NP_BYTES:
         return escape_bytes(data)
+
+    #  NULL
+    if dtype is T_PD_NAT:
+        return escape_none(data)
 
     # Sequence types
     if dtype is frozenset:
