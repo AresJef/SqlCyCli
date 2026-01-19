@@ -162,6 +162,9 @@ cdef class BaseConnection:
         bint _use_decimal
         bint _decode_bit
         bint _decode_json
+        # Retry
+        set _retry_errno
+        int _retry_times
         # Internal
         # . server
         int _server_protocol_version

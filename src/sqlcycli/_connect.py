@@ -131,6 +131,8 @@ def connect(
     use_decimal: bool = False,
     decode_bit: bool = False,
     decode_json: bool = False,
+    retry_errno: int | list | tuple | set | None = None,
+    retry_times: int = 1,
     loop: AbstractEventLoop | None = None,
 ) -> ConnectionManager:
     """Establish a [sync/async] connection to the server
@@ -179,6 +181,13 @@ def connect(
     :param use_decimal `<'bool'>`: DECIMAL columns are decoded as `decimal.Decimal` if `True`, else as `float`. Defaults to `False`.
     :param decode_bit `<'bool'>`: BIT columns are decoded as `int` if `True`, else kept as the original `bytes`. Defaults to `False`.
     :param decode_json `<'bool'>`: JSON columns are deserialized if `True`, else kept as the original JSON string. Defaults to `False`.
+    :param retry_errno `<'int/list/tupleset/None'>`: The error number(s) that triggers an automatic execution retry. Defaults to `None`.
+        - `None`: disables automatic retry.
+        - `int`: single error number to retry on.
+        - `sequence`: sequence of error numbers to retry on.
+    :param retry_times `<'int'>`: The number of retry attempts for automatic execution retry. Defaults to `1`.
+        - If `value <= 0`, it means infinite retries until success or non-retryable error.
+        - Only effective when `retry_errno` is set.
     :param loop `<'AbstractEventLoop/None'>`: The event loop for the [async] connection. Defaults to `None`.
 
     ## Example (sync):
@@ -223,6 +232,8 @@ def connect(
             "use_decimal": use_decimal,
             "decode_bit": decode_bit,
             "decode_json": decode_json,
+            "retry_errno": retry_errno,
+            "retry_times": retry_times,
         },
         cursor,
         loop,
@@ -332,6 +343,8 @@ def create_pool(
     use_decimal: bool = False,
     decode_bit: bool = False,
     decode_json: bool = False,
+    retry_errno: int | list | tuple | set | None = None,
+    retry_times: int = 1,
 ) -> PoolManager:
     """Create a pool that manages and maintains both the synchronize and asynchronize
     connections to the server through context manager `<'PoolManager'>`.
@@ -386,6 +399,13 @@ def create_pool(
     :param use_decimal `<'bool'>`: DECIMAL columns are decoded as `decimal.Decimal` if `True`, else as `float`. Defaults to `False`.
     :param decode_bit `<'bool'>`: BIT columns are decoded as `int` if `True`, else kept as the original `bytes`. Defaults to `False`.
     :param decode_json `<'bool'>`: JSON columns are deserialized if `True`, else kept as the original JSON string. Defaults to `False`.
+    :param retry_errno `<'int/list/tupleset/None'>`: The error number(s) that triggers an automatic execution retry. Defaults to `None`.
+        - `None`: disables automatic retry.
+        - `int`: single error number to retry on.
+        - `sequence`: sequence of error numbers to retry on.
+    :param retry_times `<'int'>`: The number of retry attempts for automatic execution retry. Defaults to `1`.
+        - If `value <= 0`, it means infinite retries until success or non-retryable error.
+        - Only effective when `retry_errno` is set.
     """
     return PoolManager(
         {
@@ -422,6 +442,8 @@ def create_pool(
             "use_decimal": use_decimal,
             "decode_bit": decode_bit,
             "decode_json": decode_json,
+            "retry_errno": retry_errno,
+            "retry_times": retry_times,
         },
         cursor,
     )
