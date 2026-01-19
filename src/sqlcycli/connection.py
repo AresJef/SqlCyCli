@@ -3865,7 +3865,7 @@ class BaseConnection:
                         self._next_seq_id,
                     )
                     self._close_with_reason(msg)
-                    raise errors.InternalError(msg)
+                    raise errors.InternalError(msg, errno=0)
             self._next_seq_id = (self._next_seq_id + 1) % 256
             recv_data: bytes = self._read_bytes(bytes_to_read)
             buffer.append(recv_data)
