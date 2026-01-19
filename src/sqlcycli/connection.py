@@ -221,8 +221,8 @@ class MysqlResult:
                         self._conn._write_packet(chunk)
             except OSError:
                 raise errors.LocalFileNotFoundError(
-                    ER.FILE_NOT_FOUND,
                     "Cannot find local file at: '%s'." % pkt._filename,
+                    errno=ER.FILE_NOT_FOUND,
                 )
             finally:
                 if not self._conn.closed():
@@ -236,7 +236,8 @@ class MysqlResult:
         if not pkt.read_ok_packet():
             # pragma: no cover - upstream induced protocol error
             raise errors.CommandOutOfSyncError(
-                CR.CR_COMMANDS_OUT_OF_SYNC, "Commands Out of Sync."
+                "Commands Out of Sync.",
+                errno=CR.CR_COMMANDS_OUT_OF_SYNC,
             )
         self._read_ok_packet(pkt)
         return True
@@ -1393,7 +1394,7 @@ class Cursor:
         """
         if self._executed_sql is None:
             raise errors.CursorNotExecutedError(
-                0, "Please execute a query with the cursor first."
+                "Please execute a query with the cursor first."
             )
         return True
 
@@ -1407,7 +1408,7 @@ class Cursor:
             is no longer attached to its connection.
         """
         if self.closed():
-            raise errors.CursorClosedError(0, "Cursor is closed.")
+            raise errors.CursorClosedError("Cursor is closed.")
         return True
 
     # Compliance ------------------------------------------------------------------------------
@@ -2572,7 +2573,7 @@ class BaseConnection:
         :raises `<'ConnectionClosedError'>`: If the connection is closed.
         """
         if self._server_status == -1:
-            raise errors.ConnectionClosedError(0, "Connection not connected.")
+            raise errors.ConnectionClosedError("Connection not connected.")
         return self._server_status & _SERVER_STATUS.SERVER_STATUS_AUTOCOMMIT
 
     @cython.ccall
@@ -2981,7 +2982,7 @@ class BaseConnection:
         - `False`: if the connection is not within a transaction.
         """
         if self._server_status == -1:
-            raise errors.ConnectionClosedError(0, "Connection not connected.")
+            raise errors.ConnectionClosedError("Connection not connected.")
         return self._server_status & _SERVER_STATUS.SERVER_STATUS_IN_TRANS
 
     # . decode
@@ -3145,8 +3146,8 @@ class BaseConnection:
             self._reader = None
             if isinstance(err, (OSError, IOError)):
                 raise errors.OpenConnectionError(
-                    CR.CR_CONN_HOST_ERROR,
                     "Can't connect to server on '%s' (%s)" % (self._host, err),
+                    errno=CR.CR_CONN_HOST_ERROR,
                 ) from err
             # If err is neither DatabaseError or IOError, It's a bug.
             # But raising AssertionError hides original error.
@@ -3217,7 +3218,7 @@ class BaseConnection:
         """
         if self.closed():
             if not reconnect:
-                raise errors.ConnectionClosedError(0, "Connection already closed.")
+                raise errors.ConnectionClosedError("Connection already closed.")
             self._connect()
             reconnect = False
         try:
@@ -3446,10 +3447,10 @@ class BaseConnection:
                     plugin_handler = plugin_class(self)
                 except Exception as err:
                     raise errors.AuthenticationError(
-                        CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                         "Authentication plugin '%s' not loaded: "
                         "%r cannot be constructed with connection object."
                         % (utils.decode_bytes_ascii(plugin_name), plugin_handler),
+                        errno=CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                     ) from err
                 # . try with custom handler
                 try:
@@ -3458,10 +3459,10 @@ class BaseConnection:
                     # . leave dialog to the section below
                     if plugin_name != b"dialog":
                         raise errors.AuthenticationError(
-                            CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                             "Authentication plugin '%s' not loaded: "
                             "%r missing 'authenticate()' method."
                             % (utils.decode_bytes_ascii(plugin_name), plugin_handler),
+                            errno=CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                         ) from err
         # Process auth
         if plugin_name == b"caching_sha2_password":
@@ -3489,26 +3490,25 @@ class BaseConnection:
                         self._write_packet(resp + b"\0")
                     except AttributeError as err:
                         raise errors.AuthenticationError(
-                            CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                             "Authentication plugin '%s' not loaded: "
                             "%r missing 'prompt()' method."
                             % (utils.decode_bytes_ascii(plugin_name), plugin_handler),
+                            errno=CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                         ) from err
                     except TypeError as err:
                         raise errors.AuthenticationError(
                             # fmt: off
-                            CR.CR_AUTH_PLUGIN_ERR,
                             "Authentication plugin '%s' didn't respond with string:"
                             "%r returns '%r' to prompt: %r"
-                            % ( utils.decode_bytes_ascii(plugin_name), 
-                                plugin_handler, resp, prompt ),
+                            % (utils.decode_bytes_ascii(plugin_name), plugin_handler, resp, prompt),
+                            errno=CR.CR_AUTH_PLUGIN_ERR,
                             # fmt: on
                         ) from err
                 else:
                     raise errors.AuthenticationError(
-                        CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                         "Authentication plugin '%s' not configured."
                         % utils.decode_bytes_ascii(plugin_name),
+                        errno=CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                     )
                 pkt = self._read_packet()
                 pkt.check_error()
@@ -3517,9 +3517,9 @@ class BaseConnection:
             return pkt
         else:
             raise errors.AuthenticationError(
-                CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
                 "Authentication plugin '%s' not configured"
                 % utils.decode_bytes_ascii(plugin_name),
+                errno=CR.CR_AUTH_PLUGIN_CANNOT_LOAD,
             )
         # Auth: 'mysql_native_password', 'client_ed25519' & 'mysql_clear_password'.
         self._write_packet(data)
@@ -3642,9 +3642,9 @@ class BaseConnection:
         """
         if self.closed():
             if self._close_reason is None:
-                raise errors.ConnectionClosedError(0, "Connection not connected.")
+                raise errors.ConnectionClosedError("Connection not connected.")
             else:
-                raise errors.ConnectionClosedError(0, self._close_reason)
+                raise errors.ConnectionClosedError(self._close_reason)
         return True
 
     # Write -----------------------------------------------------------------------------------
@@ -3727,7 +3727,9 @@ class BaseConnection:
         except OSError as err:
             msg: str = "Server has gone away (%s)" % err
             self._close_with_reason(msg)
-            raise errors.ConnectionLostError(CR.CR_SERVER_GONE_ERROR, msg) from err
+            raise errors.ConnectionLostError(
+                msg, errno=CR.CR_SERVER_GONE_ERROR
+            ) from err
         except BaseException as err:
             self._close_with_reason(str(err))
             raise err
@@ -3764,7 +3766,8 @@ class BaseConnection:
         pkt = self._read_packet()
         if not pkt.read_ok_packet():
             raise errors.CommandOutOfSyncError(
-                CR.CR_COMMANDS_OUT_OF_SYNC, "Command Out of Sync."
+                "Command Out of Sync.",
+                errno=CR.CR_COMMANDS_OUT_OF_SYNC,
             )
         self._server_status = pkt._server_status
         return pkt
@@ -3855,14 +3858,14 @@ class BaseConnection:
                     # MariaDB sends error packet with seqno==0 when shutdown
                     msg: str = "Lost connection to server during query"
                     self._close_with_reason(msg)
-                    raise errors.ConnectionLostError(CR.CR_SERVER_LOST, msg)
+                    raise errors.ConnectionLostError(msg, CR.CR_SERVER_LOST)
                 else:
                     msg: str = "Packet sequence number wrong - got %d expected %d" % (
                         packet_number,
                         self._next_seq_id,
                     )
                     self._close_with_reason(msg)
-                    raise errors.InternalError(0, msg)
+                    raise errors.InternalError(msg)
             self._next_seq_id = (self._next_seq_id + 1) % 256
             recv_data: bytes = self._read_bytes(bytes_to_read)
             buffer.append(recv_data)
@@ -3891,7 +3894,7 @@ class BaseConnection:
                     continue
                 msg: str = "Lost connection to server during query (%s)." % err
                 self._close_with_reason(msg)
-                raise errors.ConnectionLostError(CR.CR_SERVER_LOST, msg) from err
+                raise errors.ConnectionLostError(msg, errno=CR.CR_SERVER_LOST) from err
             except BaseException as err:
                 # Don't convert unknown exception to MySQLError.
                 self._close_with_reason(str(err))
@@ -3900,7 +3903,7 @@ class BaseConnection:
         if bytes_len(data) < size:
             msg: str = "Lost connection to server during query (reading from server)."
             self._close_with_reason(msg)
-            raise errors.ConnectionLostError(CR.CR_SERVER_LOST, msg)
+            raise errors.ConnectionLostError(msg, errno=CR.CR_SERVER_LOST)
         return data
 
     # Special methods -------------------------------------------------------------------------

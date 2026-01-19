@@ -375,7 +375,7 @@ class PoolConnectionManager:
         if conn is None:
             self._pool._verify_open()
             raise errors.PoolClosedError(
-                0, "Failed to acquire connection from the pool for unknown reason."
+                "Failed to acquire connection from the pool for unknown reason."
             )
         return conn
 
@@ -417,7 +417,7 @@ class PoolConnectionManager:
         if conn is None:
             self._pool._verify_open()
             raise errors.PoolClosedError(
-                0, "Failed to acquire connection from the pool for unknown reason."
+                "Failed to acquire connection from the pool for unknown reason."
             )
         return conn
 
@@ -1945,7 +1945,7 @@ class Pool:
         :raises `<'PoolClosedError'>`: If pool has been closed.
         """
         if self._closing or self.closed():
-            raise errors.PoolClosedError(0, "Pool is closed.")
+            raise errors.PoolClosedError("Pool is closed.")
         return True
 
     # Query -----------------------------------------------------------------------------------

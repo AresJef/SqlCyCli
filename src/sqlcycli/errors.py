@@ -15,6 +15,18 @@ from sqlcycli.constants import ER
 class MySQLError(Exception):
     """Base class for all exceptions raised by SQLCycli."""
 
+    def __init__(self, *args, errno: int | None = None) -> None:
+        if errno is None:
+            super().__init__(*args)
+        else:
+            super().__init__(errno, *args)
+        self._errno = errno
+
+    @property
+    def errno(self) -> int | None:
+        """Get the error number `<'int/None'>`."""
+        return self._errno
+
 
 class Warning(Warning, MySQLError):
     """Exception raised for important warnings like data truncations
@@ -183,7 +195,7 @@ def raise_mysql_exception(
     # Error packet has optional sqlstate that is 5 bytes and starts with '#'.
     if data_size < 5:
         error: bytes = data
-        raise InternalError(0, error)
+        raise InternalError(error, errno=0)
 
     errno: cython.int = utils.unpack_int16(data, 1)
     if data[3] == 0x23:  # '#'
@@ -194,7 +206,7 @@ def raise_mysql_exception(
     error_cls = MYSQL_ERROR_MAP.get(errno, None)
     if error_cls is None:
         error_cls = InternalError if errno < 1000 else OperationalError
-    raise error_cls(errno, error_msg)
+    raise error_cls(error_msg, errno=errno)
 
 
 # Base Exceptions ---------------------------------------------------------------------------------
