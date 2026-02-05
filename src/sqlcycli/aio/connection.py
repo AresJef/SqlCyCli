@@ -902,6 +902,8 @@ class Cursor:
                 self._executed_sql = sql
                 return rows
             except errors.MySQLError as err:
+                if self.closed():
+                    raise
                 if self._conn._retry_times != 0 and attempts >= self._conn._retry_times:
                     raise
                 if not self._conn._retry_errno:
@@ -909,6 +911,7 @@ class Cursor:
                 errno: object = err.errno
                 if errno not in self._conn._retry_errno:
                     raise
+                await self._conn.ping(True)
                 attempts += 1
                 warnings.warn(
                     "Retrying (%d) the last query on error: %s" % (attempts, err)

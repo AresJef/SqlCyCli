@@ -171,6 +171,7 @@ _map_error(
 _map_error(OperationalTableNotExistsError, ER.NO_SUCH_TABLE)
 _map_error(
     OperationalTimeoutError,
+    ER.OPERATION_TIMEOUT,
     ER.LOCK_WAIT_TIMEOUT,
     ER.STATEMENT_TIMEOUT,
     ER.QUERY_TIMEOUT,
