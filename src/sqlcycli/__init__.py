@@ -1,6 +1,7 @@
 from sqlcycli import aio, constants, errors, sqlfunc, sqlintvl
 from sqlcycli._ssl import SSL
 from sqlcycli._auth import AuthPlugin
+from sqlcycli.retry import retry_on_errno
 from sqlcycli._optionfile import OptionFile
 from sqlcycli.charset import Charset, Charsets, all_charsets
 from sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket
@@ -55,4 +56,5 @@ __all__ = [
     "escape",
     "connect",
     "create_pool",
+    "retry_on_errno",
 ]
