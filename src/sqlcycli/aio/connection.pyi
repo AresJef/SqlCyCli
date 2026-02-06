@@ -316,7 +316,5 @@ class Connection(BaseConnection):
         use_decimal: bool = False,
         decode_bit: bool = False,
         decode_json: bool = False,
-        retry_errno: int | list | tuple | set | None = None,
-        retry_times: int = 1,
         loop: AbstractEventLoop | None = None,
     ): ...

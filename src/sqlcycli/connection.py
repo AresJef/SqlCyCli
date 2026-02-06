@@ -25,8 +25,8 @@ from cython.cimports.sqlcycli import _auth, utils  # type: ignore
 
 # Python imports
 from io import BufferedReader
+import socket, errno, warnings
 from typing import Literal, Any
-import socket, errno, warnings, re
 from os import PathLike, getpid as _getpid
 from pandas import DataFrame
 from sqlcycli import _auth
@@ -892,33 +892,15 @@ class Cursor:
     @cython.inline(True)
     def _query_bytes(self, sql: bytes) -> cython.ulonglong:
         """(internal) Execute a SQL provided as encoded bytes `<'int'>`."""
-        attempts: cython.int = 0
-        while True:
-            try:
-                while self.nextset():
-                    pass
-                self._verify_connected()
-                self._clear_result()
-                self._conn._execute_command(_COMMAND.COM_QUERY, sql)
-                rows = self._conn._read_query_result(self._unbuffered)
-                self._read_result()
-                self._executed_sql = sql
-                return rows
-            except errors.MySQLError as err:
-                if self.closed():
-                    raise
-                if self._conn._retry_times != 0 and attempts >= self._conn._retry_times:
-                    raise
-                if not self._conn._retry_errno:
-                    raise
-                errno: object = err.errno
-                if errno not in self._conn._retry_errno:
-                    raise
-                self._conn.ping(True)
-                attempts += 1
-                warnings.warn(
-                    "Retrying (%d) the last query on error: %s" % (attempts, err)
-                )
+        while self.nextset():
+            pass
+        self._verify_connected()
+        self._clear_result()
+        self._conn._execute_command(_COMMAND.COM_QUERY, sql)
+        rows = self._conn._read_query_result(self._unbuffered)
+        self._read_result()
+        self._executed_sql = sql
+        return rows
 
     # Read ------------------------------------------------------------------------------------
     # . fetchone
@@ -1865,9 +1847,6 @@ class BaseConnection:
     _use_decimal: cython.bint
     _decode_bit: cython.bint
     _decode_json: cython.bint
-    # Retry
-    _retry_errno: set[int]
-    _retry_times: cython.int
     # Internal
     # . server
     _server_protocol_version: cython.int
@@ -1922,8 +1901,6 @@ class BaseConnection:
         use_decimal: cython.bint,
         decode_bit: cython.bint,
         decode_json: cython.bint,
-        retry_errno: set[int],
-        retry_times: cython.int,
     ):
         """The [sync] socket connection to the server.
 
@@ -2000,9 +1977,6 @@ class BaseConnection:
         self._use_decimal = use_decimal
         self._decode_bit = decode_bit
         self._decode_json = decode_json
-        # . retry
-        self._retry_errno = retry_errno
-        self._retry_times = retry_times
 
     # Setup -----------------------------------------------------------------------------------
     @cython.cfunc
@@ -2599,7 +2573,10 @@ class BaseConnection:
         :raises `<'ConnectionClosedError'>`: If the connection is closed.
         """
         if self._server_status == -1:
-            raise errors.ConnectionClosedError("Connection not connected.")
+            raise errors.ConnectionClosedError(
+                "Connection not connected.",
+                errno=CR.CR_CONNECTION_ERROR,
+            )
         return self._server_status & _SERVER_STATUS.SERVER_STATUS_AUTOCOMMIT
 
     @cython.ccall
@@ -3008,7 +2985,10 @@ class BaseConnection:
         - `False`: if the connection is not within a transaction.
         """
         if self._server_status == -1:
-            raise errors.ConnectionClosedError("Connection not connected.")
+            raise errors.ConnectionClosedError(
+                "Connection not connected.",
+                errno=CR.CR_CONNECTION_ERROR,
+            )
         return self._server_status & _SERVER_STATUS.SERVER_STATUS_IN_TRANS
 
     # . decode
@@ -3244,7 +3224,10 @@ class BaseConnection:
         """
         if self.closed():
             if not reconnect:
-                raise errors.ConnectionClosedError("Connection already closed.")
+                raise errors.ConnectionClosedError(
+                    "Connection already closed.",
+                    errno=CR.CR_CONNECTION_ERROR,
+                )
             self._connect()
             reconnect = False
         try:
@@ -3668,9 +3651,15 @@ class BaseConnection:
         """
         if self.closed():
             if self._close_reason is None:
-                raise errors.ConnectionClosedError("Connection not connected.")
+                raise errors.ConnectionClosedError(
+                    "Connection not connected.",
+                    errno=CR.CR_CONNECTION_ERROR,
+                )
             else:
-                raise errors.ConnectionClosedError(self._close_reason)
+                raise errors.ConnectionClosedError(
+                    self._close_reason,
+                    errno=CR.CR_CONNECTION_ERROR,
+                )
         return True
 
     # Write -----------------------------------------------------------------------------------
@@ -3982,8 +3971,6 @@ class Connection(BaseConnection):
         use_decimal: bool = False,
         decode_bit: bool = False,
         decode_json: bool = False,
-        retry_errno: int | list | tuple | set | None = None,
-        retry_times: int = 1,
     ):
         """The [sync] socket connection to the server.
 
@@ -4030,13 +4017,6 @@ class Connection(BaseConnection):
         :param use_decimal `<'bool'>`: DECIMAL columns are decoded as `decimal.Decimal` if `True`, else as `float`. Defaults to `False`.
         :param decode_bit `<'bool'>`: BIT columns are decoded as `int` if `True`, else kept as the original `bytes`. Defaults to `False`.
         :param decode_json `<'bool'>`: JSON columns are deserialized if `True`, else kept as the original JSON string. Defaults to `False`.
-        :param retry_errno `<'int/list/tupleset/None'>`: The error number(s) that triggers an automatic execution retry. Defaults to `None`.
-            - `None`: disables automatic retry.
-            - `int`: single error number to retry on.
-            - `sequence`: sequence of error numbers to retry on.
-        :param retry_times `<'int'>`: The number of retry attempts for automatic execution retry. Defaults to `1`.
-            - If `value <= 0`, it means infinite retries until success or non-retryable error.
-            - Only effective when `retry_errno` is set.
         """
         # . internal
         self._setup_internal()
@@ -4104,7 +4084,6 @@ class Connection(BaseConnection):
         self._setup_connect_attrs(utils.validate_arg_str(program_name, "program_name", None))
         # . ssl
         self._ssl_ctx = utils.validate_ssl(ssl)
-        # fmt: on
         # . auth
         if auth_plugin is not None:
             if isinstance(auth_plugin, _auth.AuthPlugin):
@@ -4126,24 +4105,4 @@ class Connection(BaseConnection):
         self._use_decimal = bool(use_decimal)
         self._decode_bit = bool(decode_bit)
         self._decode_json = bool(decode_json)
-        # . retry
-        if retry_errno is None:
-            self._retry_errno = set()
-        elif isinstance(retry_errno, int):
-            self._retry_errno = set(retry_errno)
-        elif isinstance(retry_errno, (list, tuple, set)):
-            errnos: set = set()
-            for err_no in retry_errno:
-                if not isinstance(err_no, int):
-                    raise errors.InvalidConnetionArgumentError(
-                        "'retry_errno' must contain only integers, instead got: %s %s."
-                        % (retry_errno, type(err_no))
-                    )
-                errnos.add(err_no)
-            self._retry_errno = errnos
-        else:
-            raise errors.InvalidConnetionArgumentError(
-                "'retry_errno' must be integer, sequence or None, instead got: %s %s."
-                % (repr(retry_errno), type(retry_errno))
-            )
-        self._retry_times = 0 if retry_times < 0 else retry_times
+        # fmt: on

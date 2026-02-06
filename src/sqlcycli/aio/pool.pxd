@@ -99,9 +99,6 @@ cdef class Pool:
         bint _use_decimal
         bint _decode_bit
         bint _decode_json
-        # Retry
-        set _retry_errno
-        int _retry_times
         
     # Setup
     cdef inline bint _setup(self, int min_size, int max_size, object recycle) except -1

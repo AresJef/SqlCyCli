@@ -155,8 +155,6 @@ class PoolConnection(async_conn.BaseConnection):
         use_decimal: cython.bint,
         decode_bit: cython.bint,
         decode_json: cython.bint,
-        retry_errno: set[int],
-        retry_times: cython.int,
         loop: AbstractEventLoop,
     ):
         """The [async] socket connection to the server managed by a pool.
@@ -211,9 +209,6 @@ class PoolConnection(async_conn.BaseConnection):
         self._use_decimal = use_decimal
         self._decode_bit = decode_bit
         self._decode_json = decode_json
-        # . retry
-        self._retry_errno = retry_errno
-        self._retry_times = retry_times
         # . loop
         self._loop = loop
 
@@ -276,8 +271,6 @@ class PoolSyncConnection(sync_conn.BaseConnection):
         use_decimal: cython.bint,
         decode_bit: cython.bint,
         decode_json: cython.bint,
-        retry_errno: set[int],
-        retry_times: cython.int,
     ):
         """The [sync] socket connection to the server managed by a pool.
 
@@ -331,9 +324,6 @@ class PoolSyncConnection(sync_conn.BaseConnection):
         self._use_decimal = use_decimal
         self._decode_bit = decode_bit
         self._decode_json = decode_json
-        # . retry
-        self._retry_errno = retry_errno
-        self._retry_times = retry_times
 
     # Property --------------------------------------------------------------------------------
     @property
@@ -617,9 +607,6 @@ class Pool:
     _use_decimal: cython.bint  # bool
     _decode_bit: cython.bint  # bool
     _decode_json: cython.bint  # bool
-    # . retry
-    _retry_errno: set[int]
-    _retry_times: cython.int
 
     def __init__(
         self,
@@ -660,8 +647,6 @@ class Pool:
         use_decimal: cython.bint = False,
         decode_bit: cython.bint = False,
         decode_json: cython.bint = False,
-        retry_errno: int | list | tuple | set | None = None,
-        retry_times: int = 1,
     ):
         """The pool that manages and maintains both the synchronize and asynchronize connections to the server.
 
@@ -715,13 +700,6 @@ class Pool:
         :param use_decimal `<'bool'>`: DECIMAL columns are decoded as `decimal.Decimal` if `True`, else as `float`. Defaults to `False`.
         :param decode_bit `<'bool'>`: BIT columns are decoded as `int` if `True`, else kept as the original `bytes`. Defaults to `False`.
         :param decode_json `<'bool'>`: JSON columns are deserialized if `True`, else kept as the original JSON string. Defaults to `False`.
-        :param retry_errno `<'int/list/tupleset/None'>`: The error number(s) that triggers an automatic execution retry. Defaults to `None`.
-            - `None`: disables automatic retry.
-            - `int`: single error number to retry on.
-            - `sequence`: sequence of error numbers to retry on.
-        :param retry_times `<'int'>`: The number of retry attempts for automatic execution retry. Defaults to `1`.
-            - If `value <= 0`, it means infinite retries until success or non-retryable error.
-            - Only effective when `retry_errno` is set.
         """
         # Sync Connection
         self._sync_conn = None
@@ -794,7 +772,6 @@ class Pool:
         self._program_name = utils.validate_arg_str(program_name, "program_name", None)
         # . ssl
         self._ssl_ctx = utils.validate_ssl(ssl)
-        # fmt: on
         # . auth
         if auth_plugin is not None:
             if isinstance(auth_plugin, AuthPlugin):
@@ -816,27 +793,7 @@ class Pool:
         self._use_decimal = use_decimal
         self._decode_bit = decode_bit
         self._decode_json = decode_json
-        # . retry
-        if retry_errno is None:
-            self._retry_errno = set()
-        elif isinstance(retry_errno, int):
-            self._retry_errno = set(retry_errno)
-        elif isinstance(retry_errno, (list, tuple, set)):
-            errnos: set = set()
-            for err_no in retry_errno:
-                if not isinstance(err_no, int):
-                    raise errors.InvalidConnetionArgumentError(
-                        "'retry_errno' must contain only integers, instead got: %s %s."
-                        % (retry_errno, type(err_no))
-                    )
-                errnos.add(err_no)
-            self._retry_errno = errnos
-        else:
-            raise errors.InvalidConnetionArgumentError(
-                "'retry_errno' must be integer, sequence or None, instead got: %s %s."
-                % (repr(retry_errno), type(retry_errno))
-            )
-        self._retry_times = 0 if retry_times < 0 else retry_times
+        # fmt: on
 
     # Setup -----------------------------------------------------------------------------------
     @cython.cfunc
@@ -1452,8 +1409,6 @@ class Pool:
                 self._use_decimal,
                 self._decode_bit,
                 self._decode_json,
-                self._retry_errno,
-                self._retry_times,
             )
             conn.connect()
             # . initial setup
@@ -1703,8 +1658,6 @@ class Pool:
                 self._use_decimal,
                 self._decode_bit,
                 self._decode_json,
-                self._retry_errno,
-                self._retry_times,
                 self._get_loop(),
             )
             await conn.connect()
