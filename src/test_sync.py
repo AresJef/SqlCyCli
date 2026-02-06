@@ -4120,6 +4120,44 @@ class TestGitHubIssues(TestCase):
         self.log_ended(test)
 
 
+class TestRetry(TestCase):
+    name: str = "Retry"
+
+    def test_all(self) -> None:
+        self.test_retry_decorator(3)
+
+    def test_retry_decorator(self, retry_attempts: int) -> None:
+        test = "RETRY ON ERRNO DECORATOR"
+        self.log_start(test)
+
+        import warnings
+        from sqlcycli import retry_on_errno
+
+        run_count: int = 0
+
+        @retry_on_errno((1046,), retry_attempts=retry_attempts, retry_wait_time=0.1)
+        def retry_func() -> None:
+            nonlocal run_count
+            run_count += 1
+
+            with self.setup() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM non_existent_table")
+
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore")
+                retry_func()
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("expected exception not raised")
+
+        self.assertEqual(retry_attempts + 1, run_count)
+
+        self.log_ended(test)
+
+
 if __name__ == "__main__":
     HOST = "localhost"
     PORT = 3306
@@ -4139,6 +4177,7 @@ if __name__ == "__main__":
         TestOldIssues,
         TestNewIssues,
         TestGitHubIssues,
+        TestRetry,
     ]:
         tester: TestCase = test(HOST, PORT, USER, PSWD)
         tester.test_all()
