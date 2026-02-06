@@ -395,3 +395,12 @@ class PoolClosedError(PoolError, ProgrammingError):
 
 class PoolNotClosedError(PoolError, ProgrammingError, RuntimeError):
     """Raised when a pool is not closed properly."""
+
+
+# Retry ------------------------------------------------------------------------------------------
+class RetryError(MySQLError):
+    """Base class for all exceptions raised by retry."""
+
+
+class RetryValueError(RetryError, MySQLValueError):
+    """Raised when a retry argument is invalid."""
