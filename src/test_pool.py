@@ -12,6 +12,7 @@ from sqlcycli.aio.connection import (
 )
 from sqlcycli.aio.pool import Pool, PoolConnection, PoolSyncConnection
 import asyncio
+from sqlcycli import retry_on_errno, retry_on_error
 
 
 class TestCase(unittest.TestCase):
@@ -4634,18 +4635,17 @@ class TestGitHubIssues(TestCase):
 
         self.log_ended(test)
 
+
 class TestRetry(TestCase):
     name: str = "Retry"
 
     async def test_all(self) -> None:
-        await self.test_retry_decorator(3)
+        await self.test_dec_retry_on_errno(3)
+        await self.test_dec_retry_on_error(3)
 
-    async def test_retry_decorator(self, retry_attempts: int):
-        test = "RETRY ON ERRNO DECORATOR"
+    async def test_dec_retry_on_errno(self, retry_attempts: int):
+        test = "DECORATOR: RETRY ON ERRNO"
         self.log_start(test)
-
-        import warnings
-        from sqlcycli import retry_on_errno
 
         run_count: int = 0
 
@@ -4661,9 +4661,7 @@ class TestRetry(TestCase):
                         await cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore")
-                await retry_func()
+            await retry_func()
         except Exception:
             pass
         else:
@@ -4672,6 +4670,39 @@ class TestRetry(TestCase):
         self.assertEqual(retry_attempts + 1, run_count)
 
         self.log_ended(test)
+
+    async def test_dec_retry_on_error(self, retry_attempts: int) -> None:
+        test = "DECORATOR: RETRY ON ERROR"
+        self.log_start(test)
+
+        run_count: int = 0
+
+        @retry_on_error(
+            (errors.OperationalError,),
+            retry_attempts=retry_attempts,
+            retry_wait_time=0.1,
+        )
+        async def retry_func() -> None:
+            nonlocal run_count
+            run_count += 1
+
+            async with await self.get_pool() as pool:
+                async with pool.acquire() as conn:
+                    await self.setup(conn)
+                    async with conn.cursor() as cur:
+                        await cur.execute("SELECT * FROM non_existent_table")
+
+        try:
+            await retry_func()
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("expected exception not raised")
+
+        self.assertEqual(retry_attempts + 1, run_count)
+
+        self.log_ended(test)
+
 
 if __name__ == "__main__":
     HOST = "localhost"

@@ -11,6 +11,7 @@ from sqlcycli.connection import (
     SSDictCursor,
     SSDfCursor,
 )
+from sqlcycli import retry_on_errno, retry_on_error
 
 
 class TestCase(unittest.TestCase):
@@ -4124,14 +4125,12 @@ class TestRetry(TestCase):
     name: str = "Retry"
 
     def test_all(self) -> None:
-        self.test_retry_decorator(3)
+        self.test_dec_retry_on_errno(3)
+        self.test_dec_retry_on_error(3)
 
-    def test_retry_decorator(self, retry_attempts: int) -> None:
-        test = "RETRY ON ERRNO DECORATOR"
+    def test_dec_retry_on_errno(self, retry_attempts: int) -> None:
+        test = "DECORATOR: RETRY ON ERRNO"
         self.log_start(test)
-
-        import warnings
-        from sqlcycli import retry_on_errno
 
         run_count: int = 0
 
@@ -4145,9 +4144,37 @@ class TestRetry(TestCase):
                     cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore")
-                retry_func()
+            retry_func()
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("expected exception not raised")
+
+        self.assertEqual(retry_attempts + 1, run_count)
+
+        self.log_ended(test)
+
+    def test_dec_retry_on_error(self, retry_attempts: int) -> None:
+        test = "DECORATOR: RETRY ON ERROR"
+        self.log_start(test)
+
+        run_count: int = 0
+
+        @retry_on_error(
+            (errors.OperationalError,),
+            retry_attempts=retry_attempts,
+            retry_wait_time=0.1,
+        )
+        def retry_func() -> None:
+            nonlocal run_count
+            run_count += 1
+
+            with self.setup() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM non_existent_table")
+
+        try:
+            retry_func()
         except Exception:
             pass
         else:
