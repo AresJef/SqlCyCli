@@ -88,7 +88,7 @@ def retry_on_errno(
                     # fmt: off
                     logger.warning(
                         "%s, retry (%d) on errno [%s] in %.1f seconds",
-                        exc, attempts, errno, retry_wait_time, stacklevel=1,
+                        exc, attempts, errno, retry_wait_time,
                     )
                     # fmt: on
                     if retry_wait_time > 0:
@@ -110,7 +110,7 @@ def retry_on_errno(
                     # fmt: off
                     logger.warning(
                         "%s, retry (%d) on errno [%s] in %.1f seconds",
-                        exc, attempts, errno, retry_wait_time, stacklevel=1,
+                        exc, attempts, errno, retry_wait_time,
                     )
                     # fmt: on
                     if retry_wait_time > 0:
@@ -192,7 +192,7 @@ def retry_on_error(
                     # fmt: off
                     logger.warning(
                         "%s, retry (%d) on error %s in %.1f seconds",
-                        exc, attempts, exc_type, retry_wait_time, stacklevel=1,
+                        exc, attempts, exc_type, retry_wait_time,
                     )
                     # fmt: on
                     if retry_wait_time > 0:
@@ -214,7 +214,7 @@ def retry_on_error(
                     # fmt: off
                     logger.warning(
                         "%s, retry (%d) on error %s in %.1f seconds",
-                        exc, attempts, exc_type, retry_wait_time, stacklevel=1,
+                        exc, attempts, exc_type, retry_wait_time,
                     )
                     # fmt: on
                     if retry_wait_time > 0:
