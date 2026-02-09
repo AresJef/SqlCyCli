@@ -24,6 +24,7 @@ from cython.cimports.sqlcycli.transcode import escape, decode  # type: ignore
 from cython.cimports.sqlcycli import _auth, utils  # type: ignore
 
 # Python imports
+import logging
 from io import BufferedReader
 import socket, errno, warnings
 from typing import Literal, Any
@@ -51,6 +52,9 @@ __all__ = [
     "BaseConnection",
     "Connection",
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 # Result --------------------------------------------------------------------------------------
@@ -886,6 +890,7 @@ class Cursor:
     def _query_str(self, sql: str) -> cython.ulonglong:
         """(internal) Execute a SQL provided as a text string `<'int'>`."""
         self._verify_connected()
+        logger.debug("Execute SQL:\n%s", sql)
         return self._query_bytes(utils.encode_str(sql, self._conn._encoding_ptr))
 
     @cython.cfunc
