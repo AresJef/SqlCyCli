@@ -5,46 +5,89 @@ on:
 
 jobs:
   build_wheels:
-    name: Build wheels on ${{matrix.arch}} for ${{matrix.os}}
+    name: Build wheels for ${{ matrix.os }} ${{ matrix.arch }} ${{ matrix.linux_policy || '' }}
+
     runs-on: ${{matrix.os}}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux split by policy (parallel)
+          - os: ubuntu-latest
+            arch: x86_64
+            linux_policy: manylinux
+          - os: ubuntu-latest
+            arch: x86_64
+            linux_policy: musllinux
+          # Optional extra Linux arch (adds more parallelism + time/cost)
+          # - os: ubuntu-latest
+          #   arch: aarch64
+          #   linux_policy: manylinux
+          # - os: ubuntu-latest
+          #   arch: aarch64
+          #   linux_policy: musllinux
+          # macOS
+          - os: macos-latest
+            arch: auto
+          # Windows
+          - os: windows-latest
+            arch: auto
+
     env:
       CIBW_SKIP: "pp27-* pp3* cp27-* cp34-* cp35-* cp36-* *_i686 *-win32"
       CIBW_TEST_SKIP: "*-win_arm64"
       CIBW_BEFORE_BUILD: "pip install Cython==3.2.1"
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        arch: [auto]
-        # include:
-        # - os: ubuntu-latest
-        #   arch: aarch64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Setup QEMU
+        if: runner.os == 'Linux' && matrix.arch == 'aarch64'
         uses: docker/setup-qemu-action@v3
-        if: ${{matrix.arch == 'aarch64'}}
+
       - name: Install Build Tools
         run: |
           python -m pip install --upgrade pip
           python -m pip install Cython==3.2.1
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.20.0
+
+      - name: Build Linux manylinux wheels
+        if: runner.os == 'Linux' && matrix.linux_policy == 'manylinux'
+        uses: pypa/cibuildwheel@v2.23.2
         env:
-          # CIBW_ARCHS_WINDOWS: AMD64 ARM64
-          CIBW_ARCHS_MACOS: x86_64 arm64 universal2
-          CIBW_ARCHS_LINUX: ${{matrix.arch}}
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_BUILD: "*-manylinux*"
+
+      - name: Build Linux musllinux wheels
+        if: runner.os == 'Linux' && matrix.linux_policy == 'musllinux'
+        uses: pypa/cibuildwheel@v2.23.2
+        env:
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          CIBW_BUILD: "*-musllinux*"
+
+      - name: Build macOS wheels
+        if: runner.os == 'macOS'
+        uses: pypa/cibuildwheel@v2.23.2
+        env:
+          CIBW_ARCHS_MACOS: universal2
+
+      - name: Build Windows wheels
+        if: runner.os == 'Windows'
+        uses: pypa/cibuildwheel@v2.23.2
+
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{matrix.os}}-${{matrix.arch}}-${{strategy.job-index}}
+          name: wheels-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.linux_policy || 'default' }}
           path: wheelhouse/*.whl
           retention-days: 1
 
