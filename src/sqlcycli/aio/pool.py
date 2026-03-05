@@ -652,7 +652,7 @@ class Pool:
 
         :param min_size `<'int'>`: The minimum number of [async] connections to maintain. Defaults to `0`.
         :param max_size `<'int'>`: The maximum number of [async] connections to maintain. Defaults to `10`.
-        :param recycle `<'int/None'>`: The connection recycle time in seconds. Defaults to `None`.
+        :param recycle `<'int/None'>`: The idle connection recycle time in seconds. Defaults to `None`.
             When set to a positive integer, the pool will automatically close
             and remove any connections idling more than the `recycle` time.
             Any other values disables the recycling feature.
@@ -809,7 +809,7 @@ class Pool:
 
         :param min_size `<'int'>`: The minimum number of [async] connections to maintain.
         :param max_size `<'int'>`: The maximum number of [async] connections to maintain.
-        :param recycle `<'int/None'>`: The connection recycle time in seconds.
+        :param recycle `<'int/None'>`: The idle connection recycle time in seconds.
         """
         # . counting
         self._acqr = 0
@@ -833,7 +833,7 @@ class Pool:
                 self._recycle = int(recycle)
             except Exception as err:
                 raise errors.InvalidPoolArgumentError(
-                    "Invalid recycle time: %r." % recycle
+                    "Invalid idle connection recycle time: %r." % recycle
                 ) from err
             if self._recycle < -1:
                 self._recycle = -1
@@ -1061,7 +1061,7 @@ class Pool:
 
     @property
     def recycle(self) -> int | None:
-        """The conneciton recycle time in seconds `<int/None>`.
+        """The idle conneciton recycle time in seconds `<int/None>`.
 
         Any connections idling more than the `recycle` time
         will be closed and removed from the pool. Value of
@@ -1087,9 +1087,9 @@ class Pool:
     @cython.ccall
     @cython.exceptval(-1, check=False)
     def set_recycle(self, recycle: object) -> cython.bint:
-        """Change the connection recycle time.
+        """Change the idle connection recycle time.
 
-        :param recycle `<'int/None'>`: New connection recycle time in seconds.
+        :param recycle `<'int/None'>`: New idle connection recycle time in seconds.
 
             When set to a positive integer, the pool will automatically close
             and remove any connections idling more than the `recycle` time.
@@ -1102,7 +1102,7 @@ class Pool:
                 self._recycle = int(recycle)
             except Exception as err:
                 raise errors.InvalidPoolArgumentError(
-                    "Invalid recycle time: %r." % recycle
+                    "Invalid idle connection recycle time: %r." % recycle
                 ) from err
             if self._recycle < -1:
                 self._recycle = -1
@@ -1186,7 +1186,7 @@ class Pool:
             or `None` when no more free connection is available.
         """
         try:
-            conn: PoolConnection = self._free_conns.popleft()
+            conn: PoolConnection = self._free_conns.pop()
             if self._free > 0:
                 self._free -= 1
             return conn
