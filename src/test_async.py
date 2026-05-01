@@ -1,18 +1,17 @@
+import asyncio
 import numpy as np, pandas as pd, orjson
-import datetime, time, unittest, decimal, re, os
+import datetime, time, unittest, decimal, os
 from sqlcycli import errors
 from sqlcycli.constants import ER, CLIENT
 from sqlcycli.aio.connection import (
     Connection,
-    Cursor,
     DictCursor,
     DfCursor,
     SSCursor,
     SSDictCursor,
     SSDfCursor,
 )
-import asyncio
-from sqlcycli import retry_on_errno, retry_on_error
+from sqlcycli import RetryOnErrno, RetryOnError, retry_on_errno, retry_on_error
 
 
 class TestCase(unittest.TestCase):
@@ -575,16 +574,14 @@ class TestConversion(TestCase):
             async with conn.cursor() as cur:
                 ##################################################################
                 # . create test table
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     create table {self.table} (
                         a tinyint, b tinyint, c tinyint unsigned,
                         d smallint, e smallint, f smallint unsigned,
                         g mediumint, h mediumint, i mediumint unsigned,
                         j int, k int, l int unsigned,
                         m bigint, n bigint, o bigint unsigned
-                    )"""
-                )
+                    )""")
                 # . insert values
                 # fmt: off
                 test_value = (
@@ -654,12 +651,10 @@ class TestConversion(TestCase):
             async with conn.cursor() as cur:
                 ##################################################################
                 # . create test table
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     create table {self.table} (
                         a float, b double, c decimal(10, 2)
-                    )"""
-                )
+                    )""")
                 # . insert values
                 test_value = (5.7, 6.8, decimal.Decimal("7.9"))
                 await cur.execute(
@@ -709,13 +704,11 @@ class TestConversion(TestCase):
             async with conn.cursor() as cur:
                 ##################################################################
                 # . create test table
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     create table {self.table} (
                         a char(32), b varchar(32),
                         c tinytext, d text, e mediumtext, f longtext
-                    )"""
-                )
+                    )""")
                 # . insert values
                 test_value = (
                     "char 中文 한국어 にほんご Español",
@@ -881,13 +874,11 @@ class TestConversion(TestCase):
             async with conn.cursor() as cur:
                 ##################################################################
                 # . create test table
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     create table {self.table} (
                         a time, b time, c time, d time, 
                         e time(6), f time(6), g time(6)
-                    )"""
-                )
+                    )""")
                 # . insert values
                 test_value = (
                     datetime.time(0),
@@ -989,8 +980,7 @@ class TestConversion(TestCase):
             async with conn.cursor() as cur:
                 ##################################################################
                 # . create test table
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     create table {self.table} (
                         a binary(255), 
                         b binary(255), 
@@ -998,8 +988,7 @@ class TestConversion(TestCase):
                         d binary(255), 
                         e varbinary(255),
                         f tinyblob, g blob, h mediumblob, i longblob
-                    )"""
-                )
+                    )""")
                 # . insert values
                 b = bytearray(range(255))
                 a = bytes(b)
@@ -2331,12 +2320,10 @@ class TestCursor(TestCase):
             # %% in column set
             async with conn.cursor() as cur:
                 await cur.execute(f"DROP TABLE IF EXISTS {self.db}.percent_test")
-                await cur.execute(
-                    f"""\
+                await cur.execute(f"""\
                     CREATE TABLE {self.db}.percent_test (
                         `A%` INTEGER,
-                        `B%` INTEGER)"""
-                )
+                        `B%` INTEGER)""")
                 sql = (
                     f"INSERT INTO {self.db}.percent_test (`A%%`, `B%%`) VALUES (%s, %s)"
                 )
@@ -2894,13 +2881,11 @@ class TestCursor(TestCase):
             # Buffered #########################################################
             async with conn.cursor() as cur:
                 await cur.execute("DROP PROCEDURE IF EXISTS myinc;")
-                await cur.execute(
-                    """
+                await cur.execute("""
                     CREATE PROCEDURE myinc(p1 INT, p2 INT)
                     BEGIN
                         SELECT p1 + p2 + 1;
-                    END"""
-                )
+                    END""")
                 await conn.commit()
 
             async with conn.cursor() as cur:
@@ -2917,13 +2902,11 @@ class TestCursor(TestCase):
             # Unbuffered #######################################################
             async with conn.cursor(SSCursor) as cur:
                 await cur.execute("DROP PROCEDURE IF EXISTS myinc;")
-                await cur.execute(
-                    """
+                await cur.execute("""
                     CREATE PROCEDURE myinc(p1 INT, p2 INT)
                     BEGIN
                         SELECT p1 + p2 + 1;
-                    END"""
-                )
+                    END""")
                 await conn.commit()
 
             async with conn.cursor(SSCursor) as cur:
@@ -3200,14 +3183,12 @@ class TestOldIssues(TestCase):
 
         async with await self.setup() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     CREATE TABLE {self.table} (`station` int NOT NULL DEFAULT '0', `dh`
                     datetime NOT NULL DEFAULT '2015-01-01 00:00:00', `echeance` int NOT NULL
                     DEFAULT '0', `me` double DEFAULT NULL, `mo` double DEFAULT NULL, PRIMARY
                     KEY (`station`,`dh`,`echeance`)) ENGINE=MyISAM DEFAULT CHARSET=latin1;
-                    """
-                )
+                    """)
                 self.assertEqual(0, await cur.execute(f"SELECT * FROM {self.table}"))
                 await cur.execute(
                     f"ALTER TABLE {self.table} ADD INDEX `idx_station` (`station`)"
@@ -3469,14 +3450,12 @@ class TestGitHubIssues(TestCase):
             proc: str = f"{self.db}.foo"
             async with conn.cursor() as cur:
                 await cur.execute(f"DROP PROCEDURE IF EXISTS {proc}")
-                await cur.execute(
-                    f"""
+                await cur.execute(f"""
                     CREATE PROCEDURE {proc} ()
                     BEGIN
                         SELECT 1;
                     END
-                    """
-                )
+                    """)
                 await cur.execute(f"CALL {proc}()")
                 await cur.execute("SELECT 1")
                 self.assertEqual((await cur.fetchone())[0], 1)
@@ -3620,7 +3599,9 @@ class TestRetry(TestCase):
 
     async def test_all(self) -> None:
         await self.test_dec_retry_on_errno(3)
+        await self.test_context_retry_on_errno(3)
         await self.test_dec_retry_on_error(3)
+        await self.test_context_retry_on_error(3)
 
     async def test_dec_retry_on_errno(self, retry_attempts: int):
         test = "DECORATOR: RETRY ON ERRNO"
@@ -3639,6 +3620,37 @@ class TestRetry(TestCase):
 
         try:
             await retry_func()
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("expected exception not raised")
+
+        self.assertEqual(retry_attempts + 1, run_count)
+
+        self.log_ended(test)
+
+    async def test_context_retry_on_errno(self, retry_attempts: int):
+        test = "CONTEXT MANAGER: RETRY ON ERRNO"
+        self.log_start(test)
+
+        run_count: int = 0
+
+        async def retry_func() -> None:
+            nonlocal run_count
+            run_count += 1
+
+            async with await self.setup() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT * FROM non_existent_table")
+
+        try:
+            for attemp in RetryOnErrno(
+                (1046,),
+                retry_attempts=retry_attempts,
+                retry_wait_time=0.1,
+            ):
+                with attemp:
+                    await retry_func()
         except Exception:
             pass
         else:
@@ -3669,6 +3681,37 @@ class TestRetry(TestCase):
 
         try:
             await retry_func()
+        except Exception:
+            pass
+        else:
+            raise RuntimeError("expected exception not raised")
+
+        self.assertEqual(retry_attempts + 1, run_count)
+
+        self.log_ended(test)
+
+    async def test_context_retry_on_error(self, retry_attempts: int) -> None:
+        test = "CONTEXT MANAGER: RETRY ON ERROR"
+        self.log_start(test)
+
+        run_count: int = 0
+
+        async def retry_func() -> None:
+            nonlocal run_count
+            run_count += 1
+
+            async with await self.setup() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT * FROM non_existent_table")
+
+        try:
+            for attemp in RetryOnError(
+                (errors.OperationalError,),
+                retry_attempts=retry_attempts,
+                retry_wait_time=0.1,
+            ):
+                with attemp:
+                    await retry_func()
         except Exception:
             pass
         else:
