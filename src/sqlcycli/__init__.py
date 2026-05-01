@@ -5,7 +5,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 from sqlcycli import aio, constants, errors, sqlfunc, sqlintvl
 from sqlcycli._ssl import SSL
 from sqlcycli._auth import AuthPlugin
-from sqlcycli.retry import retry_on_errno, retry_on_error
+from sqlcycli.retry import RetryOnErrno, RetryOnError, retry_on_errno, retry_on_error
 from sqlcycli._optionfile import OptionFile
 from sqlcycli.charset import Charset, Charsets, all_charsets
 from sqlcycli.protocol import MysqlPacket, FieldDescriptorPacket
@@ -22,7 +22,6 @@ from sqlcycli.connection import (
 )
 from sqlcycli.aio.pool import Pool, PoolConnection, PoolSyncConnection
 from sqlcycli._connect import connect, create_pool
-
 
 __all__ = [
     # Module
@@ -60,7 +59,9 @@ __all__ = [
     "escape",
     "connect",
     "create_pool",
-    # Decorator
+    # Retru
     "retry_on_errno",
     "retry_on_error",
+    "RetryOnErrno",
+    "RetryOnError",
 ]
