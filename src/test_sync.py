@@ -4147,12 +4147,12 @@ class TestRetry(TestCase):
                     cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            for attemp in RetryOnErrno(
+            for attempt in RetryOnErrno(
                 (1046,),
                 retry_attempts=retry_attempts,
                 retry_wait_time=0.1,
             ):
-                with attemp:
+                with attempt:
                     retry_func()
         except Exception:
             pass
@@ -4208,12 +4208,12 @@ class TestRetry(TestCase):
                     cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            for attemp in RetryOnError(
+            for attempt in RetryOnError(
                 (errors.OperationalError,),
                 retry_attempts=retry_attempts,
                 retry_wait_time=0.1,
             ):
-                with attemp:
+                with attempt:
                     retry_func()
         except Exception:
             pass

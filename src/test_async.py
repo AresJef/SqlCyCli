@@ -3644,12 +3644,12 @@ class TestRetry(TestCase):
                     await cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            for attemp in RetryOnErrno(
+            async for attempt in RetryOnErrno(
                 (1046,),
                 retry_attempts=retry_attempts,
                 retry_wait_time=0.1,
             ):
-                with attemp:
+                async with attempt:
                     await retry_func()
         except Exception:
             pass
@@ -3705,12 +3705,12 @@ class TestRetry(TestCase):
                     await cur.execute("SELECT * FROM non_existent_table")
 
         try:
-            for attemp in RetryOnError(
+            async for attempt in RetryOnError(
                 (errors.OperationalError,),
                 retry_attempts=retry_attempts,
                 retry_wait_time=0.1,
             ):
-                with attemp:
+                async with attempt:
                     await retry_func()
         except Exception:
             pass
