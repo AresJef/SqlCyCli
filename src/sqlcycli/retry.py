@@ -168,6 +168,30 @@ class RetryOnErrno:
     ) -> None:
         """Retry a sync or async block when `errors.MySQLError.errno` matches.
 
+        Sync usage
+        ----------
+        ```python
+        for attempt in RetryOnErrno(
+            (2003, 2013, 1205),
+            retry_attempts=3,
+            retry_wait_time=1.0,
+        ):
+            with attempt:
+                # Some SQL execution
+        ```
+
+        Async usage
+        -----------
+        ```python
+        async for attempt in RetryOnErrno(
+            (2003, 2013, 1205),
+            retry_attempts=3,
+            retry_wait_time=1.0,
+        ):
+            async with attempt:
+                # Some SQL execution
+        ```
+
         Retry policy:
         - Only `errors.MySQLError` is handled.
         - A retry is triggered only when `exc.errno` is contained in `errno_codes`.
@@ -438,6 +462,30 @@ class RetryOnError:
         retry_wait_time: cython.double = 1.0,
     ) -> None:
         """Retry a sync or async block when exception type matches.
+
+        Sync usage
+        ----------
+        ```python
+        for attempt in RetryOnError(
+            (errors.OperationalError,),
+            retry_attempts=3,
+            retry_wait_time=1.0,
+        ):
+            with attempt:
+                # Some SQL execution
+        ```
+
+        Async usage
+        -----------
+        ```python
+        async for attempt in RetryOnError(
+            (errors.OperationalError,),
+            retry_attempts=3,
+            retry_wait_time=1.0,
+        ):
+            async with attempt:
+                # Some SQL execution
+        ```
 
         Retry matching is **exact type only**:
         - A retry is triggered only when `type(exc)` is in `error_classes`.
