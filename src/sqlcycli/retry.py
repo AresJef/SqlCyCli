@@ -144,7 +144,7 @@ class RetryOnErrno:
     Async usage
     -----------
     ```python
-    async for attempt in RetryOnErrno(
+    for attempt in RetryOnErrno(
         (2003, 2013, 1205),
         retry_attempts=3,
         retry_wait_time=1.0,
@@ -183,7 +183,7 @@ class RetryOnErrno:
         Async usage
         -----------
         ```python
-        async for attempt in RetryOnErrno(
+        for attempt in RetryOnErrno(
             (2003, 2013, 1205),
             retry_attempts=3,
             retry_wait_time=1.0,
@@ -439,7 +439,7 @@ class RetryOnError:
     Async usage
     -----------
     ```python
-    async for attempt in RetryOnError(
+    for attempt in RetryOnError(
         (errors.OperationalError,),
         retry_attempts=3,
         retry_wait_time=1.0,
@@ -478,7 +478,7 @@ class RetryOnError:
         Async usage
         -----------
         ```python
-        async for attempt in RetryOnError(
+        for attempt in RetryOnError(
             (errors.OperationalError,),
             retry_attempts=3,
             retry_wait_time=1.0,
